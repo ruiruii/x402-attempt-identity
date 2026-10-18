@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   counterpartyDecision,
   identityInPlay,
+  isRefusal,
   observedOutputHash,
   observedSpecHash,
   type ClaimedFingerprint,
@@ -106,4 +107,49 @@ test('recomputation is verification, not a second derivation', () => {
   // A refusal mints no replacement identity: there is nothing to settle under.
   assert.equal(identityInPlay(refused, claimed), null);
   assert.equal(refused.signs, false);
+});
+
+test('cannot recompute: refuses, and reports unmeasurable rather than signing', () => {
+  // The gap this file was changed to close. Two absent values do not differ,
+  // so a clause that refuses only on mismatch is satisfied by a verifier that
+  // never compares. The response was never observed here — the shape of a
+  // record format that carries the request and not the result.
+  const d = counterpartyDecision({ request: OBSERVED.request }, claimedFor('POSITIVE'));
+
+  assert.ok(isRefusal(d));
+  assert.equal(d.refusal, 'unmeasurable');
+  assert.deepEqual(d.unavailable, ['outputHashMatchesObservedBytes']);
+});
+
+test('unmeasurable is not mismatched, and the two must be tellable apart', () => {
+  // "Refused" alone would collapse two different facts: something is wrong
+  // with the record, versus nothing is known about it. A reader who cannot
+  // tell them apart cannot act on either.
+  const unmeasurable = counterpartyDecision(
+    { request: OBSERVED.request },
+    claimedFor('POSITIVE'),
+  );
+  const mismatched = counterpartyDecision(OBSERVED, claimedFor('OUTPUT-NOT-WHAT-WAS-SERVED'));
+
+  assert.ok(isRefusal(unmeasurable));
+  assert.ok(isRefusal(mismatched));
+  assert.equal(unmeasurable.refusal, 'unmeasurable');
+  assert.equal(mismatched.refusal, 'mismatched');
+  assert.notEqual(unmeasurable.refusal, mismatched.refusal);
+
+  // And the demonstration that the hole is real: under the unmeasurable
+  // decision the mismatch list is empty. An implementation deciding "refuse
+  // only if `mismatched` is non-empty" would sign here. Ours does not.
+  assert.deepEqual(unmeasurable.mismatched, []);
+  assert.equal(unmeasurable.signs, false);
+});
+
+test('nothing observed at all is unmeasurable, not a pass', () => {
+  const d = counterpartyDecision({}, claimedFor('POSITIVE'));
+  assert.ok(isRefusal(d));
+  assert.equal(d.refusal, 'unmeasurable');
+  assert.deepEqual([...d.unavailable].sort(), [
+    'outputHashMatchesObservedBytes',
+    'specHashMatchesObservedBytes',
+  ]);
 });

@@ -18,6 +18,14 @@ import { createHash } from 'node:crypto';
  * valid. A counterparty that only checks signatures accepts a record whose
  * outputHash commits to bytes it never received. Only the binding check —
  * recompute from what I saw, compare against what you claim — catches it.
+ *
+ * And the case that makes the clause itself non-trivial: a counterparty that
+ * cannot recompute at all. Two absent values do not differ. A clause phrased
+ * only as "refuse if the value differs" is therefore satisfied by a verifier
+ * that never compares, because the condition for refusal is never met. Absence
+ * is not difference, so absence must be its own reason for refusal — and it
+ * must be distinguishable from a mismatch, because they are different facts
+ * about the world.
  */
 
 /** The bytes an HTTP interaction is identified by, as observed. */
@@ -26,22 +34,50 @@ export interface ObservedInteraction {
   readonly response: { readonly status: number; readonly body: string };
 }
 
+/**
+ * What a counterparty may actually hold. Both members are optional because a
+ * verifier frequently has one and not the other: a record format can carry the
+ * request and omit the response, or carry neither.
+ */
+export interface PartialObservation {
+  readonly request?: ObservedInteraction['request'];
+  readonly response?: ObservedInteraction['response'];
+}
+
 /** The fingerprint the producer claims, taken from the carried receipt. */
 export interface ClaimedFingerprint {
   readonly specHash: string;
   readonly outputHash: string;
 }
 
+/**
+ * Why a counterparty refused. A single refusal collapses two different facts
+ * into one, so they are named apart.
+ */
+export type RefusalReason =
+  /** Recomputed, and it differs. Something is wrong with the record. */
+  | 'mismatched'
+  /** Could not recompute. Nothing is known about the record either way. */
+  | 'unmeasurable';
+
 export type CounterpartyDecision =
   | { readonly signs: true; readonly recomputed: ClaimedFingerprint }
   | {
       readonly signs: false;
-      readonly recomputed: ClaimedFingerprint;
+      readonly recomputed: Partial<ClaimedFingerprint>;
       readonly mismatched: readonly string[];
+      readonly unavailable: readonly string[];
+      readonly refusal: RefusalReason;
     };
 
 function sha256Prefixed(bytes: string): string {
   return `sha256:${createHash('sha256').update(bytes, 'utf8').digest('hex')}`;
+}
+
+function specBytes(request: ObservedInteraction['request']): string {
+  const url = new URL(request.url);
+  const target = url.search ? `${url.pathname}?${url.search.slice(1)}` : url.pathname;
+  return `${request.method} ${target}\n${request.body}`;
 }
 
 /**
@@ -51,9 +87,7 @@ function sha256Prefixed(bytes: string): string {
  * no query must not acquire a trailing `?` that the caller never sent.
  */
 export function observedSpecHash(observed: ObservedInteraction): string {
-  const url = new URL(observed.request.url);
-  const target = url.search ? `${url.pathname}?${url.search.slice(1)}` : url.pathname;
-  return sha256Prefixed(`${observed.request.method} ${target}\n${observed.request.body}`);
+  return sha256Prefixed(specBytes(observed.request));
 }
 
 /** The response body as observed — not as described, not as re-serialized. */
@@ -64,35 +98,59 @@ export function observedOutputHash(observed: ObservedInteraction): string {
 /**
  * Recompute from observed bytes and decide.
  *
- * `signaturesValid` is carried in the result rather than taken as an input
- * because its only job is to make the interesting case visible: a decision to
- * refuse that is NOT explained by a bad signature. A record can be perfectly
- * signed and still bind to something the requester never received.
+ * Refuses when the values differ, and also refuses when they cannot be
+ * computed — with `refusal` saying which. A verifier with nothing to compare
+ * against does not get to sign by default.
  */
 export function counterpartyDecision(
-  observed: ObservedInteraction,
+  observed: PartialObservation,
   claimed: ClaimedFingerprint,
 ): CounterpartyDecision {
-  const recomputed: ClaimedFingerprint = {
-    specHash: observedSpecHash(observed),
-    outputHash: observedOutputHash(observed),
-  };
+  const unavailable: string[] = [];
 
-  const mismatched: string[] = [];
-  if (recomputed.specHash !== claimed.specHash) mismatched.push('specHashMatchesObservedBytes');
-  if (recomputed.outputHash !== claimed.outputHash) {
-    mismatched.push('outputHashMatchesObservedBytes');
+  const specHash = observed.request ? sha256Prefixed(specBytes(observed.request)) : undefined;
+  if (specHash === undefined) unavailable.push('specHashMatchesObservedBytes');
+
+  const outputHash = observed.response ? sha256Prefixed(observed.response.body) : undefined;
+  if (outputHash === undefined) unavailable.push('outputHashMatchesObservedBytes');
+
+  // Absence is not difference. This branch is the whole reason `refusal`
+  // exists: without it, an implementation that never compares satisfies a
+  // clause that only forbids signing on a mismatch.
+  if (specHash === undefined || outputHash === undefined) {
+    return {
+      signs: false,
+      recomputed: {
+        ...(specHash === undefined ? {} : { specHash }),
+        ...(outputHash === undefined ? {} : { outputHash }),
+      },
+      mismatched: [],
+      unavailable,
+      refusal: 'unmeasurable',
+    };
   }
+
+  const recomputed: ClaimedFingerprint = { specHash, outputHash };
+  const mismatched: string[] = [];
+  if (specHash !== claimed.specHash) mismatched.push('specHashMatchesObservedBytes');
+  if (outputHash !== claimed.outputHash) mismatched.push('outputHashMatchesObservedBytes');
 
   return mismatched.length === 0
     ? { signs: true, recomputed }
-    : { signs: false, recomputed, mismatched };
+    : { signs: false, recomputed, mismatched, unavailable: [], refusal: 'mismatched' };
+}
+
+/** Narrow a decision to its refusal half, so the reason can be read. */
+export function isRefusal(
+  d: CounterpartyDecision,
+): d is Extract<CounterpartyDecision, { signs: false }> {
+  return d.signs === false;
 }
 
 /**
  * The property that separates verification from derivation: whatever the
  * decision, the identity in play is the one the producer derived. A refusal
- * does not mint a replacement.
+ * mints no replacement.
  */
 export function identityInPlay(
   decision: CounterpartyDecision,

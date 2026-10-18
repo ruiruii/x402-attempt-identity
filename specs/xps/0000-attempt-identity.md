@@ -102,7 +102,10 @@ The key words MUST, MUST NOT, SHOULD, and MAY are to be interpreted as described
 ### 4.3 Obligations derived from it
 
 > **SPEC-12 (MUST).** Where the artifact is countersigned by a counterparty, that counterparty **MUST** independently recompute the fingerprint from the bytes it observed, and **MUST** refuse to sign if the recomputed value differs from the ingress-derived value. This recomputation is a verification obligation, not a second derivation: it does not create a new identity, and on mismatch the interaction **MUST NOT** settle.
-> *Test:* `independent recomputation reproduces the published hashes`, `OUTPUT-NOT-WHAT-WAS-SERVED: refused on the binding check alone`, `our in-scope verdict matches the published expectation on every case`, `recomputation is verification, not a second derivation`. Run against a second implementation's published fixtures (INAM, `conformance/inam-countersigned-vectors.json`, Apache-2.0); the hashes are recomputed from the observed bytes alone, so agreement is independent rather than copied.
+>
+> **Where the counterparty cannot perform the recomputation** — because the bytes it needs were never observed, or because a member the comparison reads is absent — it **MUST NOT** sign either, and **MUST** report which of the two it is: refused because the values differ, or refused because the comparison could not be made. **Absence is not difference.** A clause that refuses only on mismatch is satisfied by a verifier that never compares, because the condition for refusal is never met; that is the failure this sentence exists to prevent. The two refusals are different facts about the world and MUST NOT be collapsed into one.
+>
+> *Test:* `independent recomputation reproduces the published hashes`, `OUTPUT-NOT-WHAT-WAS-SERVED: refused on the binding check alone`, `our in-scope verdict matches the published expectation on every case`, `recomputation is verification, not a second derivation`, `cannot recompute: refuses, and reports unmeasurable rather than signing`, `unmeasurable is not mismatched, and the two must be tellable apart`, `nothing observed at all is unmeasurable, not a pass`. Run against a second implementation's published fixtures (INAM, `conformance/inam-countersigned-vectors.json`, Apache-2.0); the hashes are recomputed from the observed bytes alone, so agreement is independent rather than copied.
 
 > **SPEC-13 (MUST NOT).** An implementation **MUST NOT** fold values that did not exist at ingress into the identity. Outcome payloads produced later — delivered measurements, readings, result digests — are record content, not identity input. Metering that resolves differently between full and partial delivery belongs to the outcome layer, so that the gap stays visible rather than being absorbed into a re-derived identity.
 > *Test:* `SPEC-13: nothing produced after ingress reaches the attempt identity`, `request layer and outcome layer are two named sets, one operation`.
@@ -167,7 +170,7 @@ The rule is additive. It adds no field, changes no wire format, alters no existi
 A runnable prototype exists at `x402-attempt-identity/` in this submission:
 
 ```
-npm install && npm test     # 37 tests
+npm install && npm test     # 43 tests
 npm run demo                # end-to-end walkthrough
 ```
 
