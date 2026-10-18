@@ -112,3 +112,27 @@ V4–V7 are four ways to mint two identifiers for one receipt. A spec that says 
 2. **N4 is the contested line.** If the extension maintainers or holistis take the view that `resourceUrl` should be normalized per RFC 3986, N4 flips and V1 changes. Stated explicitly rather than left silent so that the correction is cheap.
 3. N3 needs a precision rule: whether fractional seconds are preserved as received or truncated. Not yet decided.
 4. Confirm the v1 member set against §5.3's actual required-vs-optional status.
+
+## Negative vectors: field set and decode order
+
+Added 2026-10-19, fulfilling the two promised in #3821. Both classes share the property that makes them worth publishing: **each produces a well-formed hex digest its author cannot tell apart from a correct one.** Nothing throws, nothing is empty, and the value agrees with itself forever.
+
+Input payload (decoded):
+
+```json
+{"version":"x402-receipt/2","network":"eip155:8453","resourceUrl":"https://api.example/v1/Translate?Text=Hello","payer":"0xAbCdEf0000000000000000000000000000000001","payTo":"0x1111111111111111111111111111111111111111","issuedAt":"2026-10-01T10:00:00Z","transaction":"0xdeadbeef"}
+```
+
+| # | Failure | Value |
+|---|---|---|
+| — | **correct** (named subset, N1–N5) | `f57dac6ca12b1ffe4925f916c4ca0e21fad63efb15ecb5e77ef01568f3dd0fa3` |
+| NEG-3 | hash the whole decoded payload instead of the named subset | `13583b72bd106dfa8ad5a8dd21971e683a7bacf8cb334ce5ddd06462ab386a1f` |
+| NEG-3b | NEG-3's form, after one optional member (`facilitator`) is added | `29717ebf84a50d62e05bd5184f2194ee56b636c50d551054e26f86c4b0e63c63` |
+| NEG-4a | lowercase the serialized JSON before parsing; member silently absent | `ae47e7509030ebcd5f169d8f478cdd8ca805c815d8870e73a483f8b692c3abc3` |
+| NEG-4b | same, but read the lowercased key: value present and mangled | `ccc8f2332e2acf6fe02ac2d5f6e74895569844e5d14d87ce4adbba469514e19d` |
+
+**NEG-3 is wrong for a structural reason, not a cosmetic one.** Hashing everything looks safer because nothing is omitted, but the identifier then depends on every member the payload happens to carry — so adding one optional member rewrites every identifier issued before the change. NEG-3b is that drift; the correct form is unaffected by the same addition, which is the difference that matters.
+
+**NEG-4 does three separate kinds of damage and none of them raises.** Lowercasing the text before parsing is the cheap way to satisfy N1. It destroys the key (`resourceUrl` → `resourceurl`), so under R2 the member is omitted rather than nulled — correct behaviour applied to a value that should never have been missing. Reaching for the lowercased key gets the member back but mangles the value (`…/v1/translate?text=hello`), which is exactly what N4 exists to prevent. And it takes `issuedAt` with it: the key is gone and the value has lost the delimiters N3 depends on (`2026-10-01t10:00:00z`).
+
+The general lesson for the rule text: **normalization applies to decoded values, and the order of decode and normalize is part of the rule.** A spec that says "lowercase the address" without saying "after parsing, and only the address" has specified the operation that produces NEG-4.
