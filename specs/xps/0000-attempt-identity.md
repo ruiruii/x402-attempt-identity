@@ -75,8 +75,10 @@ The key words MUST, MUST NOT, SHOULD, and MAY are to be interpreted as described
 ### 4.2 The named field set
 
 > **SPEC-6 (MUST).** The ingress snapshot **MUST** include at least these named fields: `method`, `path`, canonical `query`, the decoded `body` (or a digest of it computed after decoding), and the resolved `payTo`, `asset`, `network`, `amount`, and `scheme`.
+> *Test:* `attempt identity comes from named decoded fields`, `a different body is a different attempt`, `a different query is a different attempt`.
 >
 > **SPEC-7 (SHOULD).** The snapshot **SHOULD** include a domain identifier (for example a `version` literal) inside the hashed set, so that a change to the field set changes the identity's *domain* rather than silently colliding with it.
+> *Test:* `V3 — v2 field set, a different domain (R4)`.
 
 > **SPEC-8 (MUST).** Query canonicalization **MUST** percent-encode each key and value **before** joining. Implementations **MUST NOT** join unencoded components.
 > *Test:* `NEG-1` — `{a:'1', b:'2'}` and `{a:'1&b=2'}` **MUST NOT** produce the same identity.
@@ -100,10 +102,13 @@ The key words MUST, MUST NOT, SHOULD, and MAY are to be interpreted as described
 ### 4.3 Obligations derived from it
 
 > **SPEC-12 (MUST).** Where the artifact is countersigned by a counterparty, that counterparty **MUST** independently recompute the fingerprint from the bytes it observed, and **MUST** refuse to sign if the recomputed value differs from the ingress-derived value. This recomputation is a verification obligation, not a second derivation: it does not create a new identity, and on mismatch the interaction **MUST NOT** settle.
+> *Test:* `independent recomputation reproduces the published hashes`, `OUTPUT-NOT-WHAT-WAS-SERVED: refused on the binding check alone`, `our in-scope verdict matches the published expectation on every case`, `recomputation is verification, not a second derivation`. Run against a second implementation's published fixtures (INAM, `conformance/inam-countersigned-vectors.json`, Apache-2.0); the hashes are recomputed from the observed bytes alone, so agreement is independent rather than copied.
 
 > **SPEC-13 (MUST NOT).** An implementation **MUST NOT** fold values that did not exist at ingress into the identity. Outcome payloads produced later — delivered measurements, readings, result digests — are record content, not identity input. Metering that resolves differently between full and partial delivery belongs to the outcome layer, so that the gap stays visible rather than being absorbed into a re-derived identity.
+> *Test:* `SPEC-13: nothing produced after ingress reaches the attempt identity`, `request layer and outcome layer are two named sets, one operation`.
 
 > **SPEC-14 (MUST).** Where an attempt carries a reference to a **separately signed artifact**, that reference **MUST** be taken over the artifact **as transmitted**, because the signature covers those bytes. Canonicalizing them first would verify a different object than the one that was signed. This is not a second derivation of the attempt identity.
+> *Test:* `SPEC-14: a signed reference is taken over transmitted bytes`.
 
 SPEC-13 and SPEC-14 together draw the line that motivated this XP: an artifact's **own** identity comes from named decoded fields; a **reference** to a signed artifact comes from the bytes that were signed. They are different operations requiring different inputs, and conflating them is what produces both the wire-byte fingerprint and the unstable external reference.
 
@@ -162,7 +167,7 @@ The rule is additive. It adds no field, changes no wire format, alters no existi
 A runnable prototype exists at `x402-attempt-identity/` in this submission:
 
 ```
-npm install && npm test     # 28 tests
+npm install && npm test     # 37 tests
 npm run demo                # end-to-end walkthrough
 ```
 
@@ -175,6 +180,8 @@ It is a TypeScript derivation library with end-to-end tests — which the XP pro
 3. **Both production bugs, reproduced as functions.** `src/legacy.ts` contains the 2026-08-25 unencoded join and the 2026-09-11 body-less slot, marked DO NOT SHIP. The tests assert that they collide there and do not collide under the correct implementation. Reproducing them as code rather than describing them in a comment means a future edit to `canonicalQuery` or `idempotencyScope` cannot silently reintroduce either.
 4. **The `#3821` vector set.** Every published value is asserted — V1–V3 as required, V4–V7 and NEG-1/NEG-2 as forbidden.
 5. **Request layer versus outcome layer.** The attempt set carries frozen request content; the receipt set (`deriveReceiptId`) carries `issuedAt` and no request content. Same operation, two named sets.
+6. **Countersignature against a second implementation's fixtures.** `src/countersign.ts` recomputes `specHash` and `outputHash` from the observed bytes alone, and the tests run it over INAM's published vectors (`conformance/inam-countersigned-vectors.json`, Apache-2.0). The recomputation reproduces their published hashes without using their checker, so the agreement is independent. The case that matters is `OUTPUT-NOT-WHAT-WAS-SERVED`: both signatures are valid there, and only the binding check refuses it — which is what makes recomputation an obligation distinct from signature verification.
+7. **The wire-byte rule reversed where it must be.** `src/signedref.ts` takes a reference to a separately signed artifact over the transmitted bytes, and the test asserts that canonicalizing first yields a digest naming an object nobody signed — the mirror of SPEC-2, and the pair that is easy to get half right.
 
 **Field set.** The prototype derives over exactly the SPEC-6 list plus the SPEC-7 domain identifier: `version`, `method`, `path`, `query`, `bodyDigest`, `payTo`, `asset`, `network`, `amount`, `scheme`. `amount` is string-typed for the reason given in §5 — numbers are where independent JCS implementations drift, and an identity that differs by implementation is worse than no identity.
 

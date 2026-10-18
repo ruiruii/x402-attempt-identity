@@ -6,7 +6,7 @@ Submitted as the **Reference implementation** section (§7) of the XP, which the
 
 ```
 npm install
-npm test     # 28 tests: positive, negative, and the published vector set
+npm test     # 37 tests: positive, negative, published vectors, countersignature
 npm run demo # end-to-end walkthrough
 ```
 
@@ -71,6 +71,10 @@ N4 is the least obvious line and the most likely to be wrong: normalizing a URL 
 ## Vectors
 
 `test/vectors.test.ts` asserts every value published in #3821 — V1–V3 as values a conformant implementation **must** produce, V4–V7 and NEG-1/NEG-2 as values it **must not**. These were published before this file existed, so they check the implementation rather than restating it.
+
+`test/countersign.test.ts` runs against **another implementation's published fixtures**: INAM's four countersignature cases (`conformance/inam-countersigned-vectors.json`, Apache-2.0, from `github.com/inamprotocol/inam-protocol`). `src/countersign.ts` recomputes `specHash` and `outputHash` from the observed bytes alone and reproduces their published values without using their checker, so the agreement is independent rather than copied.
+
+The case that matters is `OUTPUT-NOT-WHAT-WAS-SERVED`: **both signatures are valid**, and only the binding check refuses it. That is why recomputation is an obligation distinct from signature verification — and why it is written as an obligation rather than an exemption from the "never re-derive" rule. A refusal mints no replacement identity; there is simply nothing to settle under.
 
 ## Honest limitations
 
