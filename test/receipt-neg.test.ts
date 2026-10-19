@@ -43,19 +43,23 @@ test('NEG-3 (field set): hashing the whole decoded payload is not the same opera
   assert.notEqual(fullPayload, CORRECT);
   assert.equal(fullPayload, '13583b72bd106dfa8ad5a8dd21971e683a7bacf8cb334ce5ddd06462ab386a1f');
 
+  // NEG-3b: the same wrong form, one optional member later. Pinned to its
+  // literal value, not merely asserted distinct — distinctness survives any
+  // drift that happens to change both sides.
+  const NEG3_CANON =
+    '{"issuedAt":"2026-10-01T10:00:00Z","network":"eip155:8453","payTo":"0x1111111111111111111111111111111111111111","payer":"0xAbCdEf0000000000000000000000000000000001","resourceUrl":"https://api.example/v1/Translate?Text=Hello","transaction":"0xdeadbeef","version":"x402-receipt/2"}';
+  const NEG3B_CANON = `{"facilitator":"https://fac.example",${NEG3_CANON.slice(1)}`;
+  assert.equal(jcsCanonicalize(PAYLOAD), NEG3_CANON);
+  assert.equal(jcsCanonicalize({ ...PAYLOAD, facilitator: 'https://fac.example' }), NEG3B_CANON);
+  assert.equal(
+    sha256(NEG3B_CANON),
+    '29717ebf84a50d62e05bd5184f2194ee56b636c50d551054e26f86c4b0e63c63',
+    'NEG-3b is pinned to its published value',
+  );
+
   const withOptional = sha256(jcsCanonicalize({ ...PAYLOAD, facilitator: 'https://fac.example' }));
   assert.notEqual(withOptional, fullPayload, 'the full-payload form drifts when a member is added');
-  assert.equal(
-    deriveReceiptId({
-      version: PAYLOAD.version,
-      network: PAYLOAD.network,
-      resourceUrl: PAYLOAD.resourceUrl,
-      payer: PAYLOAD.payer,
-      issuedAt: PAYLOAD.issuedAt,
-    }),
-    CORRECT,
-    'the named-subset form does not',
-  );
+  assert.equal(deriveReceiptId({ ...PAYLOAD }), CORRECT, 'the named-subset form does not');
 });
 
 /**
