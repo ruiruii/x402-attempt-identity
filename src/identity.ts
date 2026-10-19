@@ -76,7 +76,7 @@ export function attemptIdentitySubset(input: AttemptIdentityInput): Record<strin
     query: input.query,
     bodyDigest: input.bodyDigest,
     payTo: normalizeAddress(input.payTo, network),
-    asset: input.asset,
+    asset: normalizeAddress(input.asset, network),
     network,
     amount: input.amount,
     scheme: input.scheme,

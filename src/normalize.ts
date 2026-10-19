@@ -11,6 +11,25 @@
  * Each has a negative vector in test/neg.test.ts.
  */
 
+/**
+ * N0 — the field set itself. Not a normalization rule; the condition under
+ * which the normalization rules mean anything.
+ *
+ * Found by reading our own table the way cv-scvd read an implementation
+ * (`x402#3821`, 2026-10-19): N1 names the payer, and the attempt set has two
+ * address-valued fields. `payTo` was normalized and `asset` was not, for no
+ * reason other than that the rule was written about the receipt set where only
+ * one address exists. Checksum casing on `asset` therefore minted two attempts
+ * for one request. Fixed in `identity.ts` by applying N1 to every EVM-valued
+ * field by kind rather than to the field the sentence happened to name.
+ *
+ * The general form: **a normalization table is written per field, and a field
+ * set is allowed to grow.** A rule stated for the members that existed when it
+ * was written silently stops covering the set the moment a member of the same
+ * kind is added — and nothing fails, because the new member was never wrong,
+ * it was never covered.
+ */
+
 const EVM_NAMESPACES: ReadonlySet<string> = new Set(['eip155']);
 
 function splitCaip2(network: string): { namespace: string; reference: string } | null {

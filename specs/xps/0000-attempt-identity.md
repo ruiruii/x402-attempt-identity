@@ -80,7 +80,18 @@ The key words MUST, MUST NOT, SHOULD, and MAY are to be interpreted as described
 ### 4.2 The named field set
 
 > **SPEC-6 (MUST).** The ingress snapshot **MUST** include at least these named fields: `method`, `path`, canonical `query`, the decoded `body` (or a digest of it computed after decoding), and the resolved `payTo`, `asset`, `network`, `amount`, and `scheme`.
-> *Test:* `attempt identity comes from named decoded fields`, `a different body is a different attempt`, `a different query is a different attempt`.
+> *Input domain:* every request.
+> *Test:* `attempt identity comes from named decoded fields`, `a different body is a different attempt`, `a different query is a different attempt`, `a normalization rule stated per field stops covering the set when the set grows`.
+>
+> **SPEC-6b (MUST) — normalization is stated over field kinds, not over field names.** Where the normalization table (N1–N5, §5.6) names a transformation for a field, that transformation **MUST** be applied to every member of the snapshot that is of that kind, not only to the member the sentence happens to name. In particular, address lowercasing (N1) applies to **every** EVM-address-valued field, and `payTo` and `asset` are two such fields.
+> *Input domain:* every member of the SPEC-6 set whose kind has a rule in the table.
+> *Test:* `a normalization rule stated per field stops covering the set when the set grows`.
+>
+> Two facts about this clause are worth stating, because they are the reason it exists.
+>
+> **First, it was true of this prototype and nothing failed.** N1 was written about the receipt set, where exactly one address exists. The attempt set has two. `payTo` was normalized because the sentence names it; `asset` was not, because nothing said to look. Checksum casing on the asset therefore minted a second attempt for one request — the exact failure N1 exists to prevent, reproduced in the field next to the one the rule covered. Found by reading our own table in the shape cv-scvd used on an implementation (`x402#3821`): *which rows can this field set even be held to?*
+>
+> **Second, this is a failure class the rest of this document does not contain.** Every other hole here is a rule whose trigger can be made unreachable. This is a rule that stayed reachable and simply stopped covering the set when the set grew. **A normalization table is written per field; a field set is allowed to grow.** The two drift apart silently, and the drift produces no error — the uncovered member was never wrong, it was never covered.
 >
 > **SPEC-7 (SHOULD).** The snapshot **SHOULD** include a domain identifier (for example a `version` literal) inside the hashed set, so that a change to the field set changes the identity's *domain* rather than silently colliding with it.
 > *Test:* `V3 — v2 field set, a different domain (R4)`.
@@ -189,7 +200,7 @@ The rule is additive. It adds no field, changes no wire format, alters no existi
 A runnable prototype exists at `x402-attempt-identity/` in this submission:
 
 ```
-npm install && npm test     # 48 tests
+npm install && npm test     # 49 tests
 npm run demo                # end-to-end walkthrough
 ```
 

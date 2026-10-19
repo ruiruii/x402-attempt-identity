@@ -140,3 +140,39 @@ test('JCS: numbers outside the accepted range are refused, not coerced', () => {
   assert.throws(() => hashCanonical({ n: 1e21 }), RangeError);
   assert.throws(() => hashCanonical({ n: Number.POSITIVE_INFINITY }), TypeError);
 });
+
+/**
+ * N0 — the field set outran the rule.
+ *
+ * N1 was written about the receipt set, where exactly one address exists, and
+ * says "the payer is lowercased". The attempt set has two address-valued
+ * fields. `payTo` was covered because it is the field the sentence names;
+ * `asset` was not, and nothing failed — checksum casing on the asset minted a
+ * second attempt for the same request.
+ *
+ * This is not the same failure as the others in this file. Those are rules
+ * whose trigger can be made unreachable. This is a rule that stayed reachable
+ * and simply never applied to a member that was added after it was written.
+ */
+test('a normalization rule stated per field stops covering the set when the set grows', () => {
+  const one: DecodedRequest = {
+    version: '1',
+    method: 'GET',
+    path: '/v1/report',
+    query: { a: '1' },
+    body: { n: 1 },
+    payTo: '0x8ba1f109551bd432803012645ac136ddd64dba72',
+    asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    network: 'eip155:8453',
+    amount: '1000',
+    scheme: 'exact',
+  };
+  const lowerAsset: DecodedRequest = { ...one, asset: one.asset.toLowerCase() };
+
+  assert.notEqual(one.asset, lowerAsset.asset, 'the two inputs differ in casing only');
+  assert.equal(
+    captureAtIngress(one).attemptId,
+    captureAtIngress(lowerAsset).attemptId,
+    'checksum casing on asset must not mint a second attempt',
+  );
+});
