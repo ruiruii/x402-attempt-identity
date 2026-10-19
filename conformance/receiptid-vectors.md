@@ -3,7 +3,7 @@
 Drafted for x402-foundation/x402#3821.
 **Supersedes the earlier set**: all values below are computed under the normalization table N1–N5, which the first set lacked. Do not mix values across the two sets.
 
-All values computed locally (JCS per RFC 8785 → SHA-256 over UTF-8 bytes). Not yet reproduced by an independent implementation — that remains a precondition for these going near a conformance suite.
+All values computed locally (JCS per RFC 8785 → SHA-256 over UTF-8 bytes). **Reproduced by an independent implementation that did not read this file — see [Independent reproductions](#independent-reproductions), which also records the two errors that reproduction found in the first version of it.**
 
 ## Rule under test
 
@@ -108,7 +108,7 @@ V4–V7 are four ways to mint two identifiers for one receipt. A spec that says 
 
 ## Open before these are usable
 
-1. Independent reproduction of every value by an implementation that did not read this file.
+1. ~~Independent reproduction of every value by an implementation that did not read this file.~~ **Done 2026-10-19** — see [Independent reproductions](#independent-reproductions). It was not a formality: the reproducer could not reach two of our numbers, and both were our errors.
 2. **N4 is the contested line.** If the extension maintainers or holistis take the view that `resourceUrl` should be normalized per RFC 3986, N4 flips and V1 changes. Stated explicitly rather than left silent so that the correction is cheap.
 3. N3 needs a precision rule: whether fractional seconds are preserved as received or truncated. Not yet decided.
 4. Confirm the v1 member set against §5.3's actual required-vs-optional status.
@@ -156,3 +156,36 @@ The third one is where our earlier text overstated the case. We wrote that NEG-4
 
 The general lesson for the rule text: **normalization applies to decoded values, and the order of decode and normalize is part of the rule.** A spec that says "lowercase the address" without saying "after parsing, and only the address" has specified the operation that produces NEG-4.
 
+
+## Independent reproductions
+
+A vector set has two possible states, and only one of them is worth anything. Set A has never disagreed with itself. Set B has disagreed with someone else and can say exactly what changed. Set A cannot distinguish "these values are right" from "these values agree with the code that produced them", because in both cases every value matches and nothing throws. This section exists so that these vectors are set B.
+
+### Reproduction 1 — @epistemedeus, 2026-10-19
+
+Independently, on a codebase that did not read this file's `expected` values, using two languages for the digest step:
+
+- Node **v22.14.0** with `node:crypto`, running `96cc84f` — **44 tests, 44 pass**.
+- Python `hashlib` and Node `crypto` cross-checks, after SHA-256 self-tests on both sides.
+- Reproduced: the four NEG-4 cases distinguish correctly from each other, `fe714ba1…` (NEG-4b, whole-second N3) and `2e9dcd1b…` (NEG-4c, pre-N3), the whole-payload negative `13583b72…`, and the same value's change to `a2c016d2…` when the payer is lowercased *before* hashing rather than after parsing.
+- Results: [comment on #3821](https://github.com/x402-foundation/x402/issues/3821#issuecomment-6259370660), which explicitly permits quotation with attribution and without paraphrase.
+
+**What it found — both errors were ours.**
+
+1. **A published value that no sentence in this file produced.** `ccc8f233` was published as NEG-4b and described as "value present and mangled". The reproducer computed `2e9dcd1b` from that description and reached a different number, and said so instead of guessing an input: *"I have left those two vectors unresolved rather than guessing an input."* That refusal is what made the error findable. The number was correct for an input we never named (it is NEG-4d); the name described an input we never computed. Fixed by publishing all four input objects and the exact canonical bytes under each, and by adopting the rule that **a published vector is the triple** `(input, operation, expected)` — `(name, expected)` is not reproducible, because a name does not determine an input.
+
+2. **A test that could not fail.** `test/receipt-neg.test.ts` computed NEG-3b but asserted only that it *differed* from NEG-3. `notEqual` on two values that drift together stays green forever, so the assertion carried none of the weight the vector claimed. The reproducer supplied the literal that should have been pinned: `29717ebf84a50d62e05bd5184f2194ee56b636c50d551054e26f86c4b0e63c63`. Fixed in `8b88f78` by pinning the digest and its canonical string, with the mutation check recorded in the test.
+
+Neither error would have surfaced from inside: the suite was green at 43/43 and the file agreed with the code at every line. What surfaced them was a second implementation that (a) read the text rather than the code, and (b) was willing to report a value it could not reproduce as *unresolved* rather than as *wrong* or *right*.
+
+**What this section does not claim.** It is a reproduction of these vectors, not an endorsement of N4, of N3's precision rule, or of the rule under test. Both remain open above, and the reproducer says so explicitly: *"This is not a general RFC 8785 implementation or a decision on the open normalization rules."*
+
+### Reproduction 2 — @cv-scvd, 2026-10-19
+
+Checked N1–N5 against a shipped implementation (`hashQuotedTerms` in `seancrecord/scvd-general-store-repo`, source at `fae09f12`) rather than against a reimplementation, with line numbers for every claim. Its result is the more uncomfortable of the two and is therefore recorded here rather than only on the issue: **the field set in that hash has no timestamp, no URL and no version**, so N3, N4 and N5 have no target there at all, and the one rule that would break it — N2 — breaks something else first. A network string that is not already canonical skips the `startsWith("eip155:")` branch that gates the address lowercasing, so a missing normalization rule disables a different rule downstream of it.
+
+That is a property of vector tables in general and not of this one: **a row can only be tested where its field exists.** Which rows a given implementation can be held to is not visible from the table.
+
+### What a second reproduction is for
+
+It is not corroboration. Two implementations agreeing on a value they were both told to produce proves that the value is computable, which was never in doubt. What is worth recording is the case where they **cannot** agree, because that is the only event that carries information about the text: it means a sentence in this file does not determine what its author thought it determined. Both errors above are of that form, and both were found by the party with no incentive to find them.

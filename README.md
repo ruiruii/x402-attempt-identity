@@ -80,5 +80,9 @@ The case that matters is `OUTPUT-NOT-WHAT-WAS-SERVED`: **both signatures are val
 
 - **JCS numbers.** `src/jcs.ts` implements the subset the invariant needs. Numbers requiring exponential serialization are refused with `RangeError` rather than emitted, because a serialization another implementation might disagree with is exactly the failure class this work is about. Refusing is correct here, not a gap.
 - **Not a facilitator.** This is a derivation library plus end-to-end tests, which the XP process accepts as a prototype. It is not a drop-in x402 SDK component.
-- **N3 precision.** Whether fractional seconds are preserved as received or truncated is not yet decided; currently preserved as received.
+- **N3 precision.** Whether fractional seconds are preserved as received or truncated is not yet decided. Preserving the string is not preserving the instant: `…:00.1Z` and `…:00.100Z` are one instant and currently yield two identifiers. That is a **defect in N3, not a choice**, and it is not fixed here because fixing it unilaterally would pick a side of an open question.
 - **N4 is contested** and flagged as such.
+
+## Independent reproduction
+
+The vectors in `conformance/receiptid-vectors.md` have been reproduced by an implementation that did not read their expected values — two languages for the digest step, on Node v22.14.0. It found two errors in the first version: one published value whose name did not determine its input, and one test that asserted only that two values differed, which stays green when both drift together. Both are fixed, and both are recorded in the vectors file under **Independent reproductions**, including what the reproduction does *not* claim (it is not an endorsement of N4 or of N3's precision rule).
