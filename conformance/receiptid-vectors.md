@@ -128,11 +128,31 @@ Input payload (decoded):
 | — | **correct** (named subset, N1–N5) | `f57dac6ca12b1ffe4925f916c4ca0e21fad63efb15ecb5e77ef01568f3dd0fa3` |
 | NEG-3 | hash the whole decoded payload instead of the named subset | `13583b72bd106dfa8ad5a8dd21971e683a7bacf8cb334ce5ddd06462ab386a1f` |
 | NEG-3b | NEG-3's form, after one optional member (`facilitator`) is added | `29717ebf84a50d62e05bd5184f2194ee56b636c50d551054e26f86c4b0e63c63` |
-| NEG-4a | lowercase the serialized JSON before parsing; member silently absent | `ae47e7509030ebcd5f169d8f478cdd8ca805c815d8870e73a483f8b692c3abc3` |
-| NEG-4b | same, but read the lowercased key: value present and mangled | `ccc8f2332e2acf6fe02ac2d5f6e74895569844e5d14d87ce4adbba469514e19d` |
+| NEG-4a | `resourceUrl` and `issuedAt` read by their original keys: both gone, both omitted | `ae47e7509030ebcd5f169d8f478cdd8ca805c815d8870e73a483f8b692c3abc3` |
+| NEG-4b | all five read by their lowercased keys; N1–N5 applied | `fe714ba1f47c7152dbd37762c968637ad6005caf79a6c3f99a5d1104743938a6` |
+| NEG-4c | all five by their lowercased keys; N3 skipped | `2e9dcd1bfe51bb9161e2b896c0eab53b860fef2194be6619e5785a64d4b68ab3` |
+| NEG-4d | `resourceUrl` by its lowercased key, `issuedAt` by its original key | `ccc8f2332e2acf6fe02ac2d5f6e74895569844e5d14d87ce4adbba469514e19d` |
 
-**NEG-3 is wrong for a structural reason, not a cosmetic one.** Hashing everything looks safer because nothing is omitted, but the identifier then depends on every member the payload happens to carry — so adding one optional member rewrites every identifier issued before the change. NEG-3b is that drift; the correct form is unaffected by the same addition, which is the difference that matters.
+NEG-3b's `facilitator` value is `https://fac.example`.
 
-**NEG-4 does three separate kinds of damage and none of them raises.** Lowercasing the text before parsing is the cheap way to satisfy N1. It destroys the key (`resourceUrl` → `resourceurl`), so under R2 the member is omitted rather than nulled — correct behaviour applied to a value that should never have been missing. Reaching for the lowercased key gets the member back but mangles the value (`…/v1/translate?text=hello`), which is exactly what N4 exists to prevent. And it takes `issuedAt` with it: the key is gone and the value has lost the delimiters N3 depends on (`2026-10-01t10:00:00z`).
+**Correction (2026-10-19).** `ccc8f233` was published under the name NEG-4b and described as "value present and mangled". It is neither: it is NEG-4d. An independent reproducer computed `2e9dcd1b` from the same sentence and could not reach our number. Neither value is wrong — **the number was right for an input we did not name, and the name described an input we did not compute.**
+
+The exact canonical bytes hashed, so that no reader has to reconstruct them:
+
+```
+correct {"issuedAt":"2026-10-01T10:00:00Z","network":"eip155:8453","payer":"0xabcdef0000000000000000000000000000000001","resourceUrl":"https://api.example/v1/Translate?Text=Hello","version":"x402-receipt/2"}
+NEG-4a  {"network":"eip155:8453","payer":"0xabcdef0000000000000000000000000000000001","version":"x402-receipt/2"}
+NEG-4b  {"issuedAt":"2026-10-01T10:00:00Z","network":"eip155:8453","payer":"0xabcdef0000000000000000000000000000000001","resourceUrl":"https://api.example/v1/translate?text=hello","version":"x402-receipt/2"}
+NEG-4c  {"issuedAt":"2026-10-01t10:00:00z","network":"eip155:8453","payer":"0xabcdef0000000000000000000000000000000001","resourceUrl":"https://api.example/v1/translate?text=hello","version":"x402-receipt/2"}
+NEG-4d  {"network":"eip155:8453","payer":"0xabcdef0000000000000000000000000000000001","resourceUrl":"https://api.example/v1/translate?text=hello","version":"x402-receipt/2"}
+NEG-3b  {"facilitator":"https://fac.example","issuedAt":"2026-10-01T10:00:00Z","network":"eip155:8453","payTo":"0x1111111111111111111111111111111111111111","payer":"0xAbCdEf0000000000000000000000000000000001","resourceUrl":"https://api.example/v1/Translate?Text=Hello","transaction":"0xdeadbeef","version":"x402-receipt/2"}
+```
+
+**A published vector is the triple (input, operation, expected).** Published as (name, expected) it is not reproducible, because a name does not determine an input. Three readers produced three objects from one sentence and our own test produced a fourth that matched none of the descriptions — and all four hash to well-formed digests that agree with themselves forever. Every vector above now carries the bytes it hashes.
+
+**NEG-4 does three separate kinds of damage, none of them raises, and the damage is not uniform across members.** Lowercasing the text before parsing is the cheap way to satisfy N1. It destroys the key (`resourceUrl` -> `resourceurl`), so under R2 the member is omitted rather than nulled — correct behaviour applied to a value that should never have been missing. Reaching for the lowercased key gets the member back but mangles the value (`.../v1/translate?text=hello`), which is exactly what N4 exists to prevent. And it destroys `issuedAt`'s key too.
+
+The third one is where our earlier text overstated the case. We wrote that NEG-4 "takes `issuedAt` with it". It does not, if N3 is implemented: RFC 3339's ABNF permits lowercase `t` and `z`, so `2026-10-01t10:00:00z` is a valid timestamp and a conformant N3 returns `2026-10-01T10:00:00Z`. **A correct normalization rule repairs this damage; it cannot repair `resourceUrl`, because N4 is deliberately nothing.** So "the record is mangled" is not one fact — it is one fact per member, and only some of them are recoverable.
 
 The general lesson for the rule text: **normalization applies to decoded values, and the order of decode and normalize is part of the rule.** A spec that says "lowercase the address" without saying "after parsing, and only the address" has specified the operation that produces NEG-4.
+

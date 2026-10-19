@@ -6,7 +6,7 @@ Submitted as the **Reference implementation** section (§7) of the XP, which the
 
 ```
 npm install
-npm test     # 43 tests: positive, negative, published vectors, countersignature
+npm test     # 44 tests: positive, negative, published vectors, countersignature
 npm run demo # end-to-end walkthrough
 ```
 

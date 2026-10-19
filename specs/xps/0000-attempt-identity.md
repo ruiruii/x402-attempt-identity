@@ -170,7 +170,7 @@ The rule is additive. It adds no field, changes no wire format, alters no existi
 A runnable prototype exists at `x402-attempt-identity/` in this submission:
 
 ```
-npm install && npm test     # 43 tests
+npm install && npm test     # 44 tests
 npm run demo                # end-to-end walkthrough
 ```
 
