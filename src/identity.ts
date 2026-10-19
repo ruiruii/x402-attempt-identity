@@ -4,6 +4,7 @@ import {
   normalizeAddress,
   normalizeNetwork,
   normalizeVersion,
+  type Normalized,
 } from './normalize.js';
 
 /**
@@ -66,21 +67,50 @@ export function hashCanonical(value: unknown): string {
 /**
  * Extract the named subset and normalize it (N1, N2, N4, N5).
  * Extraction is over decoded values only — no transmitted bytes reach here.
+ *
+ * SPEC-6c, at the branch: every normalizer returns `Normalized`, and a failed
+ * arm is thrown here rather than folded into an identity. Throwing is the
+ * visible-undetermined outcome for a pure function — there is no place to
+ * report "could not judge" inside a hex digest, so the only honest options are
+ * an exception or a distinguishable sentinel, and a sentinel in the hashed set
+ * would be a new field the spec does not define.
  */
 export function attemptIdentitySubset(input: AttemptIdentityInput): Record<string, string> {
-  const network = normalizeNetwork(input.network);
+  const network = unwrap('network', normalizeNetwork(input.network));
+  const payTo = unwrap('payTo', normalizeAddress(input.payTo, network));
+  const asset = unwrap('asset', normalizeAddress(input.asset, network));
   return {
-    version: normalizeVersion(input.version),
+    version: unwrap('version', normalizeVersion(input.version)),
     method: input.method,
     path: input.path,
     query: input.query,
     bodyDigest: input.bodyDigest,
-    payTo: normalizeAddress(input.payTo, network),
-    asset: normalizeAddress(input.asset, network),
+    payTo,
+    asset,
     network,
     amount: input.amount,
     scheme: input.scheme,
   };
+}
+
+/**
+ * The visible failure. A caller that reaches this cannot proceed with a
+ * well-formed identity, which is the difference between this and the silent
+ * default it replaced: on `network: '8453'` the address rules used to be
+ * skipped and an identity was emitted anyway.
+ */
+export class UnnormalizableMember extends Error {
+  readonly member: string;
+  constructor(member: string, reason: string) {
+    super(`SPEC-6c: member \`${member}\` is unnormalizable — ${reason}`);
+    this.name = 'UnnormalizableMember';
+    this.member = member;
+  }
+}
+
+function unwrap(member: string, n: Normalized): string {
+  if (!n.ok) throw new UnnormalizableMember(member, n.unnormalizable);
+  return n.value;
 }
 
 export function deriveAttemptId(input: AttemptIdentityInput): AttemptId {

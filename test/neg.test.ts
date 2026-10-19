@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { captureAtIngress, canonicalQuery, type DecodedRequest } from '../src/ingress.js';
 import { idempotencyScope } from '../src/scope.js';
-import { hashCanonical } from '../src/identity.js';
+import { hashCanonical, UnnormalizableMember } from '../src/identity.js';
 import { deriveReceiptId } from '../src/receipt.js';
 import { normalizeIssuedAt } from '../src/normalize.js';
 import { legacyScope, scopeWithoutBody, unencodedQuery } from '../src/legacy.js';
@@ -102,7 +102,11 @@ test('N3: three spellings of one instant produce one identifier', () => {
     }),
   );
   assert.equal(new Set(ids).size, 1, 'one instant produced more than one identifier');
-  for (const f of forms) assert.equal(normalizeIssuedAt(f), '2026-10-15T11:41:25Z');
+  for (const f of forms) {
+    const n = normalizeIssuedAt(f);
+    assert.ok(n.ok, `N3 must normalize "${f}"`);
+    assert.equal(n.value, '2026-10-15T11:41:25Z');
+  }
 });
 
 /** N1 and N2, asserted as negative vectors: skipping them changes the value. */
@@ -178,19 +182,36 @@ test('a normalization rule stated per field stops covering the set when the set 
 });
 
 /**
- * SPEC-6c — an unnormalizable member must not pass as a normalized one.
+/**
+ * SPEC-6c — the obligation sits on the branch, not on the outcome.
  *
- * The case: `network` arrives in a form N2 does not cover (`8453`, no CAIP-2
- * namespace). `normalizeNetwork` returns it unchanged, so `payTo` is left at
- * whatever casing it arrived in, because the lowercasing is gated on the
- * namespace being `eip155`. The resulting attemptId is well-formed, stable and
- * agrees with itself forever — which is the failure, not a side effect.
+ * This test replaces one that asserted the defect. That test measured:
  *
- * The assertion is about distinguishability, not about which value is correct:
- * an implementation may refuse, or resolve to an explicit unmeasurable outcome,
- * but it must not emit an identity that looks like a successful normalization.
+ *   network 'eip155:8453'  checksum vs lowercase  -> SAME  (N1 applied)
+ *   network '8453'         checksum vs lowercase  -> DIFF  (N1 skipped)
+ *
+ * and held the second row as the documented behaviour. It was green on a
+ * behaviour the spec forbids, and its own comment said so. The reason it
+ * could pass is the reason cv-scvd's two sites matter: the skip was
+ * unobservable. A difference in the output was mistaken for a report of the
+ * difference, and the difference existed only by accident — the raw network
+ * string was hashed as received, which separated the identities for a reason
+ * that has nothing to do with the address rule.
+ *
+ * A test can only tell "a rule was skipped" from "a rule was applied and the
+ * values differ" if the implementation says which happened. So the obligation
+ * is stated where it can be checked: when a normalization rule's precondition
+ * is not met, the member MUST fail to a visible undetermined state, and MUST
+ * NOT be let through unnormalized.
+ *
+ * The three assertions below are the whole clause:
+ *   1. a covered network still produces an identity (the rule did not become
+ *      a refusal everywhere — that would satisfy the clause vacuously);
+ *   2. an uncovered network throws, and says which member was unnormalizable;
+ *   3. the thrown case is distinguishable from the covered case without
+ *      comparing digests, because the failure is not carried by the value.
  */
-test('an unnormalizable member cannot pass as a normalized one', () => {
+test('an unnormalizable member fails to a visible undetermined state', () => {
   const canonical: DecodedRequest = {
     version: '1',
     method: 'POST',
@@ -204,46 +225,51 @@ test('an unnormalizable member cannot pass as a normalized one', () => {
     scheme: 'exact',
   };
 
-  // Same request, network in a form N2 has no rule for.
-  const unnormalizable: DecodedRequest = { ...canonical, network: '8453' };
-
-  // The normalized path lowercases the payer; the unnormalized path cannot,
-  // because the namespace test is what decides whether to lowercase at all.
+  // 1. The covered case still works, and N1 applies to both address fields.
   const normalizedPayer = captureAtIngress({ ...canonical, payTo: canonical.payTo.toLowerCase() }).attemptId;
   const raw = captureAtIngress(canonical).attemptId;
   assert.equal(raw, normalizedPayer, 'checksum casing on a covered network is normalized away');
 
-  // The unnormalizable input DOES change the value (the network string is
-  // hashed as-is, so nothing collapses), but the change is not a reported one:
-  // the caller gets a well-formed attemptId with no indication that the payer
-  // was left at whatever casing it arrived in. `normalizeNetwork` has no third
-  // return position, so the skip is unrepresentable to the caller.
-  //
-  // That is the SPEC-6c defect, stated where it can be tested: not "the value
-  // is wrong" but "the failure has no output". The assertion below holds the
-  // current behaviour so the test documents it rather than hiding it; the test
-  // for the clause itself is the one that must be written when a return
-  // position exists.
-  // Measured, and the measurement is the point of this test:
-  //
-  //   network 'eip155:8453'  checksum vs lowercase  -> SAME  (N1 applied)
-  //   network '8453'         checksum vs lowercase  -> DIFF  (N1 skipped)
-  //
-  // The second row is the defect. It is not that the two inputs collide — the
-  // network string itself still separates them, which is precisely why nobody
-  // notices. It is that the skip is unobservable from outside: the caller
-  // receives a well-formed attemptId and no signal that a rule was not applied.
-  //
-  // This test asserts the defect, not the fix, because the fix needs a third
-  // return position (`{ value } | { unnormalizable }`) that the pure normalizer
-  // does not have. It goes red the day that position is added, which is the
-  // intended trigger for rewriting it against SPEC-6c.
-  const withChecksum = captureAtIngress(unnormalizable).attemptId;
-  const withLower = captureAtIngress({ ...unnormalizable, payTo: canonical.payTo.toLowerCase() }).attemptId;
-  assert.notEqual(
-    withChecksum,
-    withLower,
-    'DEFECT: on an uncovered network the payer is left as received, and no path reports it',
+  // 2. The uncovered case cannot produce an identity at all.
+  const unnormalizable: DecodedRequest = { ...canonical, network: '8453' };
+  assert.throws(
+    () => captureAtIngress(unnormalizable),
+    (err: unknown) => {
+      assert.ok(err instanceof UnnormalizableMember, 'must be the visible failure, not a digest');
+      if (err instanceof UnnormalizableMember) assert.equal(err.member, 'network');
+      return true;
+    },
+    'an uncovered network must not yield a well-formed identity',
   );
-  assert.notEqual(withChecksum, raw, 'the uncovered network string still separates the identity');
+
+  // 3. Reachability: the refusal is caused by the precondition, not by
+  //    something else on the request. Repair the network and the same request
+  //    resolves — otherwise the throw above would be green for any malformed
+  //    input and would prove nothing about N2.
+  const repaired: DecodedRequest = { ...unnormalizable, network: 'eip155:8453' };
+  assert.doesNotThrow(() => captureAtIngress(repaired), 'the only difference is the network form');
+});
+
+test('an unknown address namespace is unnormalizable, not passed through', () => {
+  // The gate is the namespace, and a namespace with no address rule is the
+  // case the old code answered with "return it unchanged". That answer is the
+  // silent default; SPEC-6c says the branch must be visible.
+  const base: DecodedRequest = {
+    version: '1',
+    method: 'POST',
+    path: '/v1/pay',
+    query: { a: '1' },
+    body: { n: 1 },
+    payTo: 'So11111111111111111111111111111111111111112',
+    asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+    network: 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
+    amount: '1000',
+    scheme: 'exact',
+  };
+  assert.throws(
+    () => captureAtIngress(base),
+    (err: unknown) =>
+      err instanceof UnnormalizableMember && err.member === 'payTo',
+    'a namespace with no lowercasing rule must not silently keep the address as received',
+  );
 });

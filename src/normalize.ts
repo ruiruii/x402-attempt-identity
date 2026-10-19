@@ -30,6 +30,36 @@
  * it was never covered.
  */
 
+/**
+ * N0-b — the precondition is part of the rule, and its failure must be visible.
+ *
+ * SPEC-6c used to be stated as an outcome on the member: an unnormalizable input
+ * must not be indistinguishable from a normalized one. That sentence can be
+ * satisfied by accident, and it was: on `network: '8453'` the address rule was
+ * silently skipped, and the identity still differed from the normalized one
+ * merely because the raw `network` string was hashed as received. Nothing
+ * reported that a rule had not been applied.
+ *
+ * cv-scvd's evidence is why the obligation is restated at the branch rather than
+ * at the outcome (`x402#3821`, 2026-10-19): one codebase, two sites, the same
+ * `network.startsWith("eip155:")` gate, opposite behaviour — `quotedTerms`
+ * skipped the transform in silence, `familyOf()` fell through to `"unknown"` and
+ * `payable: null`. Same condition, same order, and the difference was not a
+ * decision about normalization at all. So the thing that can be mandated is not
+ * the order and not the value: it is that the non-matching branch must reach a
+ * visible undetermined state.
+ *
+ * These normalizers therefore return a union with an explicit `unnormalizable`
+ * arm. Callers cannot consume them without choosing what to do with that arm —
+ * the skip is no longer unrepresentable to the caller.
+ */
+export type Normalized<T = string> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly unnormalizable: string };
+
+const ok = (value: string): Normalized => ({ ok: true, value });
+const cannot = (reason: string): Normalized => ({ ok: false, unnormalizable: reason });
+
 const EVM_NAMESPACES: ReadonlySet<string> = new Set(['eip155']);
 
 function splitCaip2(network: string): { namespace: string; reference: string } | null {
@@ -38,11 +68,19 @@ function splitCaip2(network: string): { namespace: string; reference: string } |
   return { namespace: network.slice(0, i), reference: network.slice(i + 1) };
 }
 
-/** N1. Address-checksum casing must not make one address into two identities. */
-export function normalizeAddress(address: string, network: string): string {
+/**
+ * N1. Address-checksum casing must not make one address into two identities.
+ *
+ * Takes the *normalized* network, because the namespace test is the gate. When
+ * that gate cannot be evaluated — the network is not CAIP-2 — the address is
+ * unnormalizable rather than left as received. Leaving it as received is the
+ * silent default this function exists to remove.
+ */
+export function normalizeAddress(address: string, network: string): Normalized {
   const parts = splitCaip2(network);
-  if (parts && EVM_NAMESPACES.has(parts.namespace)) return address.toLowerCase();
-  return address;
+  if (!parts) return cannot('N1: network is not CAIP-2, so no address rule can be selected');
+  if (EVM_NAMESPACES.has(parts.namespace.toLowerCase())) return ok(address.toLowerCase());
+  return cannot(`N1: no address rule for namespace "${parts.namespace}"`);
 }
 
 /** N1, named for the receipt set where the field is the payer. */
@@ -53,15 +91,15 @@ export const normalizePayer = normalizeAddress;
  * namespace. For eip155 the reference is a decimal chain id with no leading
  * zeros, which is the only reference rule this implementation knows.
  */
-export function normalizeNetwork(network: string): string {
+export function normalizeNetwork(network: string): Normalized {
   const parts = splitCaip2(network);
-  if (!parts) return network.toLowerCase();
+  if (!parts) return cannot(`N2: "${network}" is not CAIP-2 (no namespace:reference)`);
 
   let { reference } = parts;
   if (parts.namespace === 'eip155' && /^\d+$/.test(reference)) {
     reference = String(Number.parseInt(reference, 10));
   }
-  return `${parts.namespace.toLowerCase()}:${reference}`;
+  return ok(`${parts.namespace.toLowerCase()}:${reference}`);
 }
 
 /**
@@ -78,17 +116,13 @@ export function normalizeNetwork(network: string): string {
  * a proposal that is still open. Preserving a STRING is not preserving an
  * INSTANT, and the comment used to conflate the two.
  */
-export function normalizeIssuedAt(value: string): string {
+export function normalizeIssuedAt(value: string): Normalized {
   const m = /^(\d{4}-\d{2}-\d{2})[Tt ](\d{2}:\d{2}:\d{2})(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/.exec(value);
-  if (!m) {
-    throw new TypeError(`N3: "${value}" is not an RFC 3339 timestamp`);
-  }
+  if (!m) return cannot(`N3: "${value}" is not an RFC 3339 timestamp`);
   const parsed = new Date(value.replace(' ', 'T'));
-  if (Number.isNaN(parsed.getTime())) {
-    throw new TypeError(`N3: "${value}" is not a resolvable instant`);
-  }
+  if (Number.isNaN(parsed.getTime())) return cannot(`N3: "${value}" is not a resolvable instant`);
   const fraction = m[3] ?? '';
-  return parsed.toISOString().replace(/\.\d{3}Z$/, `${fraction}Z`);
+  return ok(parsed.toISOString().replace(/\.\d{3}Z$/, `${fraction}Z`));
 }
 
 /**
@@ -100,11 +134,11 @@ export function normalizeIssuedAt(value: string): string {
  * line in the table and is kept explicit so that reversing it is a one-line,
  * findable change rather than an unstated assumption.
  */
-export function normalizeResourceUrl(url: string): string {
-  return url;
+export function normalizeResourceUrl(url: string): Normalized {
+  return ok(url);
 }
 
 /** N5. A spec-assigned literal; hashed exactly as decoded. */
-export function normalizeVersion(version: string): string {
-  return version;
+export function normalizeVersion(version: string): Normalized {
+  return ok(version);
 }

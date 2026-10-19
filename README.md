@@ -6,7 +6,7 @@ Submitted as the **Reference implementation** section (§7) of the XP, which the
 
 ```
 npm install
-npm test     # 50 tests: positive, negative, published vectors, countersignature
+npm test     # 52 tests: positive, negative, published vectors, countersignature
 npm run demo # end-to-end walkthrough
 ```
 
@@ -82,7 +82,7 @@ The case that matters is `OUTPUT-NOT-WHAT-WAS-SERVED`: **both signatures are val
 - **Not a facilitator.** This is a derivation library plus end-to-end tests, which the XP process accepts as a prototype. It is not a drop-in x402 SDK component.
 - **N3 precision.** Whether fractional seconds are preserved as received or truncated is not yet decided. Preserving the string is not preserving the instant: `…:00.1Z` and `…:00.100Z` are one instant and currently yield two identifiers. That is a **defect in N3, not a choice**, and it is not fixed here because fixing it unilaterally would pick a side of an open question.
 - **N4 is contested** and flagged as such.
-- **One test asserts a defect, not a fix.** `an unnormalizable member cannot pass as a normalized one` documents that an uncovered `network` value leaves the payer at whatever casing it arrived in, with no signal to the caller: a well-formed `attemptId` comes back either way. It is green on the behaviour SPEC-6c forbids, deliberately — the alternative was to omit it, which would have made the clause read as satisfied. It goes red the day `normalizeNetwork` has a third return position, which is the intended trigger for rewriting it.
+- **The clause that used to be satisfied by accident.** SPEC-6c once said only that an unnormalizable member must not be indistinguishable from a normalized one, and one test was green on a behaviour the clause forbids — an uncovered `network` left the payer as received, and a well-formed `attemptId` came back anyway. The output happened to differ, for a reason unrelated to the skipped address rule, and that difference was mistaken for a report of the skip. The obligation is now on the branch: unnormalizable members fail visibly, and the normalizers' return type says so. Reachability is checked by mutation — putting back the silent default in N2, in the N1 namespace gate, or in N3 each turns exactly one test red. The N3 arm had no such test until that mutation was run, which is why it is now the example rather than the footnote.
 
 ## Independent reproduction
 

@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { jcsCanonicalize } from '../src/jcs.js';
 import { normalizeIssuedAt, normalizeResourceUrl } from '../src/normalize.js';
 import { deriveReceiptId } from '../src/receipt.js';
+import { UnnormalizableMember } from '../src/identity.js';
 
 /**
  * The two negative vectors promised in x402#3821: field set, and decode order.
@@ -144,7 +145,9 @@ test('NEG-4 (decode order): normalizing the text instead of the values', () => {
   // stays mangled — that is what N4 exists to prevent — but issuedAt is
   // repaired by N3, because RFC 3339 permits lowercase t and z.
   assert.equal(deriveReceiptId(NEG4.b), NEG4_PUBLISHED.b);
-  assert.equal(normalizeIssuedAt('2026-10-01t10:00:00z'), '2026-10-01T10:00:00Z');
+  const n3 = normalizeIssuedAt('2026-10-01t10:00:00z');
+  assert.ok(n3.ok);
+  assert.equal(n3.value, '2026-10-01T10:00:00Z');
 
   // (c) the same five members with N3 skipped. This is the value an
   // independent reproducer reached from the published name, and it is a
@@ -165,8 +168,12 @@ test('the damage NEG-4 does is not uniform across members', () => {
   // N3. So the recovery of a manged record depends on which member you look
   // at, and "the record is mangled" is not one fact.
   assert.notEqual(NEG4_PUBLISHED.b, NEG4_PUBLISHED.c, 'with and without N3 are different');
-  assert.equal(normalizeIssuedAt(LOWERED.issuedat), PAYLOAD.issuedAt);
-  assert.notEqual(normalizeResourceUrl(LOWERED.resourceurl), PAYLOAD.resourceUrl);
+  const repaired = normalizeIssuedAt(LOWERED.issuedat);
+  assert.ok(repaired.ok);
+  assert.equal(repaired.value, PAYLOAD.issuedAt);
+  const url = normalizeResourceUrl(LOWERED.resourceurl);
+  assert.ok(url.ok);
+  assert.notEqual(url.value, PAYLOAD.resourceUrl);
 });
 
 test('NEG-3 and NEG-4 are distinct from each other and from every published value', () => {
@@ -178,5 +185,39 @@ test('NEG-3 and NEG-4 are distinct from each other and from every published valu
     new Set([...neg, CORRECT]).size,
     neg.length + 1,
     'all five negative values and the correct value must be mutually distinct',
+  );
+});
+
+/**
+ * SPEC-6c at the branch — the same clause, on the receipt set.
+ *
+ * This one exists because a mutation said it had to. The clause was first
+ * tested only through `network` on the attempt set, and making N3 return its
+ * input unchanged left all tests green: the obligation was reachable in one
+ * place and unreachable in the other, and nothing said so. A rule that is
+ * checked on one member is a rule about that member.
+ *
+ * `issuedAt` is the case where the old implementation threw a TypeError
+ * instead. Throwing was visible, which is why nothing looked wrong — but a
+ * `TypeError` from a regex is a report that the string is malformed, not that
+ * a normalization rule could not select a form. The two are now the same
+ * shape: an unnormalizable member, named.
+ */
+test('SPEC-6c: a member N3 cannot normalize fails visibly, on the receipt set too', () => {
+  const base = {
+    version: 'x402-receipt/2',
+    network: 'eip155:8453',
+    payer: '0xAbCdEf0000000000000000000000000000000001',
+  };
+
+  // A covered timestamp still resolves — the clause is not satisfied by
+  // refusing everything.
+  assert.doesNotThrow(() => deriveReceiptId({ ...base, issuedAt: '2026-10-01t10:00:00z' }));
+
+  // An uncovered one cannot produce an identifier.
+  assert.throws(
+    () => deriveReceiptId({ ...base, issuedAt: '2026-10-01 10:00' }),
+    (err: unknown) => err instanceof UnnormalizableMember && err.member === 'issuedAt',
+    'a timestamp N3 cannot parse must not be hashed as received',
   );
 });

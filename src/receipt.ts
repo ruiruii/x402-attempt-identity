@@ -1,11 +1,18 @@
 import { hashCanonical } from './identity.js';
+import { UnnormalizableMember } from './identity.js';
 import {
   normalizeIssuedAt,
   normalizeNetwork,
   normalizePayer,
   normalizeResourceUrl,
   normalizeVersion,
+  type Normalized,
 } from './normalize.js';
+
+function unwrap(member: string, n: Normalized): string {
+  if (!n.ok) throw new UnnormalizableMember(member, n.unnormalizable);
+  return n.value;
+}
 
 /**
  * `receiptId` — the same derivation rule as the attempt identity, applied to a
@@ -33,17 +40,17 @@ export interface ReceiptIdentityInput {
  * attempt subset, because the receipt has a genuinely optional member.
  */
 export function receiptIdentitySubset(input: ReceiptIdentityInput): Record<string, string> {
-  const network = normalizeNetwork(input.network);
+  const network = unwrap('network', normalizeNetwork(input.network));
   const subset: Record<string, string> = {
-    version: normalizeVersion(input.version),
+    version: unwrap('version', normalizeVersion(input.version)),
     network,
-    payer: normalizePayer(input.payer, network),
+    payer: unwrap('payer', normalizePayer(input.payer, network)),
   };
   if (input.resourceUrl !== undefined) {
-    subset['resourceUrl'] = normalizeResourceUrl(input.resourceUrl);
+    subset['resourceUrl'] = unwrap('resourceUrl', normalizeResourceUrl(input.resourceUrl));
   }
   if (input.issuedAt !== undefined) {
-    subset['issuedAt'] = normalizeIssuedAt(input.issuedAt);
+    subset['issuedAt'] = unwrap('issuedAt', normalizeIssuedAt(input.issuedAt));
   }
   return subset;
 }
