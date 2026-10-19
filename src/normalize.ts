@@ -49,7 +49,15 @@ export function normalizeNetwork(network: string): string {
  * N3. One instant, one identifier.
  * "2026-10-15T11:41:25Z", "2026-10-15T11:41:25+00:00" and
  * "2026-10-15T19:41:25+08:00" are the same moment and MUST produce one value.
- * Fractional-second precision is preserved as received.
+ *
+ * Fractional seconds: the digit string is currently preserved as received, and
+ * that is a defect rather than a choice — ".1" and ".100" are one instant and
+ * produce two identifiers, which is the exact failure N1 and N2 exist to
+ * prevent, reproduced in the timestamp field. The fix (truncate to whole
+ * seconds) is proposed in x402#3821 and not applied here until it is ruled on,
+ * because applying it unilaterally would change the normalization table under
+ * a proposal that is still open. Preserving a STRING is not preserving an
+ * INSTANT, and the comment used to conflate the two.
  */
 export function normalizeIssuedAt(value: string): string {
   const m = /^(\d{4}-\d{2}-\d{2})[Tt ](\d{2}:\d{2}:\d{2})(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/.exec(value);
