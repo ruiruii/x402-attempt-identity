@@ -107,7 +107,7 @@ The key words MUST, MUST NOT, SHOULD, and MAY are to be interpreted as described
 > *Test:* `V3 — v2 field set, a different domain (R4)`.
 
 > **SPEC-8 (MUST).** Query canonicalization **MUST** percent-encode each key and value **before** joining. Implementations **MUST NOT** join unencoded components.
-> *Test:* `NEG-Q1` — `{a:'1', b:'2'}` and `{a:'1&b=2'}` **MUST NOT** produce the same identity. (Renumbered from `NEG-1`, which was already the vector for an absent member emitted as `null`; one number cannot name two failures.)
+> *Test:* `NEG-Q1: unencoded query join collapses two different requests` — `{a:'1', b:'2'}` and `{a:'1&b=2'}` **MUST NOT** produce the same identity. (This vector was to be renumbered from `NEG-1`, which already names the absent-member vector; the note below records that the rename was stated here before it was made in the suite.)
 
 > **SPEC-9 (MUST).** Normalization **MUST** be applied exactly as the table below specifies — this table is the definition, and an implementation does not get to decide that a member is one "for which normalization is not defined":
 >
@@ -127,7 +127,7 @@ The key words MUST, MUST NOT, SHOULD, and MAY are to be interpreted as described
 >
 > *Input domain:* two kinds of absence, and both are covered — a member that the request never carried, and a member whose name the implementation destroyed before reading it (so that a value that exists is not reachable by the name the set expects). The second is not hypothetical: it is what NEG-4 produces.
 >
-> *Test:* `R2`, `NEG-1` (vector), `NEG-4a` (both members unreachable, both omitted and neither nulled).
+> *Test:* `R2: omitting a member and nulling it are different, and only one is correct`, `NEG-1 — absent member emitted as null instead of omitted`, and the published vector `NEG-4a` inside `NEG-4 (decode order)` (both members unreachable, both omitted and neither nulled). `NEG-4a` is a vector id in `NEG4_PUBLISHED`, not a test title.
 
 > **SPEC-11 (MUST).** Canonicalization **MUST** follow RFC 8785 (JCS): object keys sorted by UTF-16 code units, no insignificant whitespace, UTF-8 output. The digest **MUST** be over the UTF-8 bytes of that output.
 > *Test:* `V1`, `canonical query is order-independent`.
@@ -141,7 +141,7 @@ The key words MUST, MUST NOT, SHOULD, and MAY are to be interpreted as described
 > *Test:* `independent recomputation reproduces the published hashes`, `OUTPUT-NOT-WHAT-WAS-SERVED: refused on the binding check alone`, `our in-scope verdict matches the published expectation on every case`, `recomputation is verification, not a second derivation`, `cannot recompute: refuses, and reports unmeasurable rather than signing`, `unmeasurable is not mismatched, and the two must be tellable apart`, `nothing observed at all is unmeasurable, not a pass`. Run against a second implementation's published fixtures (INAM, `conformance/inam-countersigned-vectors.json`, Apache-2.0); the hashes are recomputed from the observed bytes alone, so agreement is independent rather than copied.
 
 > **SPEC-13 (MUST NOT).** An implementation **MUST NOT** fold values that did not exist at ingress into the identity. Outcome payloads produced later — delivered measurements, readings, result digests — are record content, not identity input. Metering that resolves differently between full and partial delivery belongs to the outcome layer, so that the gap stays visible rather than being absorbed into a re-derived identity.
-> *Test:* `SPEC-13: nothing produced after ingress reaches the attempt identity`, `request layer and outcome layer are two named sets, one operation`.
+> *Test:* `SPEC-13: nothing produced after ingress reaches the attempt identity`, `SPEC-13: request layer and outcome layer are two named sets, one operation`.
 
 > **SPEC-14 (MUST).** Where an attempt carries a reference to a **separately signed artifact**, that reference is **not** automatically a digest of the transmitted bytes. What a signature covers is decided by the artifact's own scheme, and it is not the same object for every scheme: a scheme that signs bytes covers the transmitted bytes, while a scheme that signs a structured message — EIP-712 typed fields together with their domain, for example — covers that message, which is unchanged by member order or whitespace. Three identifiers are therefore in play, and an implementation **MUST NOT** collapse them:
 >

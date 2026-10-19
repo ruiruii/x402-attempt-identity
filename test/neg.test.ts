@@ -24,12 +24,16 @@ const URL = 'https://api.example.com/v1/report';
 const PAYER = '0x8ba1f109551bD432803012645Ac136ddd64DBA72';
 
 /**
- * NEG-1 — 2026-08-25 query-encoding collision.
+ * NEG-Q1 — 2026-08-25 query-encoding collision.
  *
  * `{a:'1', b:'2'}` and `{a:'1&b=2'}` are different requests. Joined without
  * encoding they serialize to the same string, so they share one identity.
+ *
+ * Renumbered from NEG-1, which already names the absent-member vector in the
+ * published set. SPEC-8 declared the rename before the suite carried it; this
+ * line is the other half of that.
  */
-test('NEG-1: unencoded query join collapses two different requests', () => {
+test('NEG-Q1: unencoded query join collapses two different requests', () => {
   const a = { a: '1', b: '2' };
   const b = { a: '1&b=2' };
 
