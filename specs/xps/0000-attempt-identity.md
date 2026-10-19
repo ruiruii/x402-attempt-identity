@@ -66,11 +66,16 @@ The key words MUST, MUST NOT, SHOULD, and MAY are to be interpreted as described
 > **SPEC-3 (MUST).** The derived identity **MUST** be resolved, not recomputed from live state, by `/settle`, refusal handling (§9), replay-lookup, and challenge-quote responses. All four **MUST** resolve the same value.
 > *Test:* `POS-1`, `POS-1b` (refusal resolves the same value as settle).
 
-> **SPEC-4 (MUST NOT).** No path **MUST** derive identity from request content that was not part of the ingress snapshot. Re-invoking a pure scope function over the already-frozen ingress inputs is permitted and expected — that is re-evaluation of a deterministic function, not a re-derivation.
+> **SPEC-4 (MUST NOT).** An implementation **MUST NOT** derive identity from request content that was not part of the ingress snapshot. Re-invoking a pure scope function over the already-frozen ingress inputs is permitted and expected — that is re-evaluation of a deterministic function, not a re-derivation.
 > *Test:* `POS-1c` (stable across repeated invocation), `NEG-1b`, `NEG-2`.
 
-> **SPEC-5 (MUST).** A request whose `amount`, query, or body differs **MUST** produce a different identity, and that difference **MUST** surface as a settlement or announcement event — never as a silent divergence in which two paths resolve different identities for the same logical request.
-> *Test:* `a different body is a different attempt`, `a different query is a different attempt`.
+> **SPEC-5 (MUST).** A request whose `amount`, query, or body differs **MUST** produce a different identity under SPEC-1 — the difference is established **at ingress, from the snapshot**, not discovered later by comparing two downstream resolutions. An implementation **MUST NOT** treat a downstream divergence as an acceptable observable: a second derivation that produces a different value for one logical request is a **violation**, and the event that surfaces it is the evidence of the violation, not a permitted mode of operation.
+>
+> *Input domain:* every request. There is no request for which this clause is vacuous, because the comparison it requires is between two ingress snapshots, and an implementation always has both.
+>
+> Why this is written as a prohibition rather than as an obligation to emit an event: an earlier wording here said the difference "MUST surface as a settlement or announcement event". Under SPEC-3 no downstream path re-reads the request, so the two identities it compares **cannot differ**, and the obligation to emit was satisfied by never having anything to emit. That is the same failure SPEC-12 had — an obligation whose trigger never fires in a conformant system, satisfied by the system being conformant. The rule now says what is true: divergence must not exist, and if it does exist the event is proof of a bug.
+>
+> *Test:* `a different body is a different attempt`, `a different query is a different attempt`, `a downstream divergence is a failure, not an event`.
 
 ### 4.2 The named field set
 
@@ -81,20 +86,27 @@ The key words MUST, MUST NOT, SHOULD, and MAY are to be interpreted as described
 > *Test:* `V3 — v2 field set, a different domain (R4)`.
 
 > **SPEC-8 (MUST).** Query canonicalization **MUST** percent-encode each key and value **before** joining. Implementations **MUST NOT** join unencoded components.
-> *Test:* `NEG-1` — `{a:'1', b:'2'}` and `{a:'1&b=2'}` **MUST NOT** produce the same identity.
+> *Test:* `NEG-Q1` — `{a:'1', b:'2'}` and `{a:'1&b=2'}` **MUST NOT** produce the same identity. (Renumbered from `NEG-1`, which was already the vector for an absent member emitted as `null`; one number cannot name two failures.)
 
-> **SPEC-9 (MUST).** Normalization **MUST** be applied to every member for which it is defined, and **MUST NOT** be applied where it is not:
+> **SPEC-9 (MUST).** Normalization **MUST** be applied exactly as the table below specifies — this table is the definition, and an implementation does not get to decide that a member is one "for which normalization is not defined":
 >
 > - EVM addresses in `payTo` and payer fields **MUST** be lowercased;
 > - `network` **MUST** be in CAIP-2 canonical form (namespace lowercase, reference as defined by that namespace);
-> - timestamps **MUST** be converted to UTC and serialized in RFC 3339 `Z` form;
+> - timestamps **MUST** be converted to UTC and serialized in RFC 3339 `Z` form; a timestamp is a valid instant whether its `t`/`z` separators are upper or lower case, so normalization **MUST** repair the case rather than reject the value;
 > - URLs **MUST NOT** be normalized — path and query casing can be semantically significant and RFC 3986 syntax-based normalization is not applied uniformly by producers;
 > - a spec-assigned literal (`version`) **MUST** be hashed as decoded.
 >
-> *Test:* `N1`, `N2`, `N2b`, `N3`, `V4`, `V5`, `V6`, `V7`.
+> *Input domain:* every member of the SPEC-6 set. The condition for this clause is "the member is in the table", not "the implementer defined normalization for it", so there is no implementation-state from which the clause is vacuous.
+>
+> Why: an earlier wording said normalization must be applied "to every member for which it is defined", which left the definition with the implementation. An implementation that never wrote a `network` normalizer then satisfies the sentence by having nothing defined — and in at least one shipped implementation the consequence was worse than a divergent hash: the branch deciding whether to lowercase addresses at all read `network` case-sensitively, so a mis-cased network **silently skipped the address rule too**. A missing normalization does not fail alone; it can disable a rule whose trigger depends on reading the same member correctly first.
+>
+> *Test:* `N1`, `N2`, `N2b`, `N3`, `V4`, `V5`, `V6`, `V7`, `N3 repairs lowercase t and z`.
 
 > **SPEC-10 (MUST).** An absent member **MUST** be omitted from the hashed set entirely. It **MUST NOT** be emitted as `null`, empty string, or zero.
-> *Test:* `R2`, `NEG-1` (vector).
+>
+> *Input domain:* two kinds of absence, and both are covered — a member that the request never carried, and a member whose name the implementation destroyed before reading it (so that a value that exists is not reachable by the name the set expects). The second is not hypothetical: it is what NEG-4 produces.
+>
+> *Test:* `R2`, `NEG-1` (vector), `NEG-4a` (both members unreachable, both omitted and neither nulled).
 
 > **SPEC-11 (MUST).** Canonicalization **MUST** follow RFC 8785 (JCS): object keys sorted by UTF-16 code units, no insignificant whitespace, UTF-8 output. The digest **MUST** be over the UTF-8 bytes of that output.
 > *Test:* `V1`, `canonical query is order-independent`.
@@ -177,7 +189,7 @@ The rule is additive. It adds no field, changes no wire format, alters no existi
 A runnable prototype exists at `x402-attempt-identity/` in this submission:
 
 ```
-npm install && npm test     # 46 tests
+npm install && npm test     # 48 tests
 npm run demo                # end-to-end walkthrough
 ```
 

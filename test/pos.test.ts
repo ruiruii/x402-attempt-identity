@@ -108,3 +108,43 @@ test('canonical query is order-independent and encoded', () => {
   // Both '&' and '=' are encoded, so neither can smuggle in structure.
   assert.equal(canonicalQuery({ a: '1&b=2' }), 'a=1%26b%3D2');
 });
+
+/**
+ * SPEC-5, as rewritten. The original wording asked for a wave of the hand:
+ * "that difference MUST surface as an event". Under SPEC-3 no downstream path
+ * re-reads the request, so two downstream identities cannot differ, and the
+ * obligation was satisfied by there never being anything to emit.
+ *
+ * What the clause actually requires is a comparison between two ingress
+ * snapshots, and an implementation always has both.
+ */
+test('a downstream divergence is a failure, not an event', () => {
+  const one = captureAtIngress({ ...request, body: { amount: '1' } });
+  const two = captureAtIngress({ ...request, body: { amount: '2' } });
+
+  // The comparison is available at ingress, before any path runs. Nothing has
+  // to be observed downstream for the rule to have teeth.
+  assert.notEqual(one.attemptId, two.attemptId);
+  assert.notEqual(one.bodyDigest, two.bodyDigest);
+
+  // And a path that resolved one value cannot later resolve the other: the
+  // resolved value is the frozen one, not a function of live state. An
+  // implementation that could produce two values for one attempt has already
+  // violated SPEC-1; the discovery of that is evidence, not a mode of operation.
+  assert.equal(idempotencyScope(one), idempotencyScope(one), 'the resolved value is a function of frozen inputs');
+  assert.equal(new Set(DOWNSTREAM_PATHS.map((p) => scopeAt(one, p))).size, 1);
+  assert.notEqual(idempotencyScope(one), idempotencyScope(two));
+});
+
+/**
+ * SPEC-9, as rewritten. RFC 3339 permits lowercase `t` and `z`, so a
+ * timestamp lowercased in transit is a valid instant and normalization MUST
+ * repair it rather than reject it. This is also why the damage NEG-4 does is
+ * not uniform: a correct N3 repairs the timestamp and nothing can repair the
+ * URL, because N4 is deliberately nothing.
+ */
+test('N3 repairs lowercase t and z rather than rejecting the value', () => {
+  const upper = deriveAttemptId({ ...IDENTITY_BASE, issuedAt: '2026-10-01T10:00:00Z' } as never);
+  const lower = deriveAttemptId({ ...IDENTITY_BASE, issuedAt: '2026-10-01t10:00:00z' } as never);
+  assert.equal(upper, lower, 'lowercase separators are the same instant');
+});
