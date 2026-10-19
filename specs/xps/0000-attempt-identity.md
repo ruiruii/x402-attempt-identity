@@ -110,10 +110,17 @@ The key words MUST, MUST NOT, SHOULD, and MAY are to be interpreted as described
 > **SPEC-13 (MUST NOT).** An implementation **MUST NOT** fold values that did not exist at ingress into the identity. Outcome payloads produced later — delivered measurements, readings, result digests — are record content, not identity input. Metering that resolves differently between full and partial delivery belongs to the outcome layer, so that the gap stays visible rather than being absorbed into a re-derived identity.
 > *Test:* `SPEC-13: nothing produced after ingress reaches the attempt identity`, `request layer and outcome layer are two named sets, one operation`.
 
-> **SPEC-14 (MUST).** Where an attempt carries a reference to a **separately signed artifact**, that reference **MUST** be taken over the artifact **as transmitted**, because the signature covers those bytes. Canonicalizing them first would verify a different object than the one that was signed. This is not a second derivation of the attempt identity.
-> *Test:* `SPEC-14: a signed reference is taken over transmitted bytes`.
+> **SPEC-14 (MUST).** Where an attempt carries a reference to a **separately signed artifact**, that reference is **not** automatically a digest of the transmitted bytes. What a signature covers is decided by the artifact's own scheme, and it is not the same object for every scheme: a scheme that signs bytes covers the transmitted bytes, while a scheme that signs a structured message — EIP-712 typed fields together with their domain, for example — covers that message, which is unchanged by member order or whitespace. Three identifiers are therefore in play, and an implementation **MUST NOT** collapse them:
+>
+> - **operation identity** — the attempt's own identifier, derived under SPEC-2 from named decoded fields;
+> - **captured-artifact digest** — a digest of the bytes as transmitted, identifying one exact capture: two serializations of the same signed content give two different values;
+> - **signed-content identifier** — the identifier the scheme actually verifies, computed by that format's declared recipe.
+>
+> A format **MUST** declare which of these its reference covers, and **MUST** declare the input and version of that identifier. A reference **MUST NOT** be required to be taken over the whole transmitted envelope, and **MUST NOT** be required to be taken over a canonicalized form. The two errors point in opposite directions: hashing the wire envelope verifies a different object than the one a typed-field scheme signed, and canonicalizing first verifies a different object than the one a byte-signing scheme signed. That is why one digest cannot serve all three. None of these is a second derivation of the attempt identity.
+>
+> *Test:* `SPEC-14: a captured reference is taken over transmitted bytes`, `SPEC-14: two serializations of one signed message`, `SPEC-14: a reference cannot be computed without a declaration`. The second is the control: two differently serialized artifacts with identical signed content **MUST** both verify, their capture digests **MUST** differ, and the signed-content identifier **MUST** follow the declared recipe. In the reference implementation `signedArtifactReference` has no overload without a declaration, so the identifier cannot be computed without stating which of the three it is.
 
-SPEC-13 and SPEC-14 together draw the line that motivated this XP: an artifact's **own** identity comes from named decoded fields; a **reference** to a signed artifact comes from the bytes that were signed. They are different operations requiring different inputs, and conflating them is what produces both the wire-byte fingerprint and the unstable external reference.
+SPEC-13 and SPEC-14 together draw the line that motivated this XP: an artifact's **own** identity comes from named decoded fields; a **reference** to a signed artifact comes from whatever that artifact's scheme signed, which the format has to name. They are different operations requiring different inputs, and conflating them is what produces both the wire-byte fingerprint and the unstable external reference.
 
 > **SPEC-15 (MAY).** An implementation **MAY** name the identity anything — `attempt_id`, `Idempotency-Key`, idempotency scope, or a scheme-specific field. The requirement is the discipline (derive once, resolve identically), not the introduction of a specific field.
 
@@ -170,7 +177,7 @@ The rule is additive. It adds no field, changes no wire format, alters no existi
 A runnable prototype exists at `x402-attempt-identity/` in this submission:
 
 ```
-npm install && npm test     # 44 tests
+npm install && npm test     # 46 tests
 npm run demo                # end-to-end walkthrough
 ```
 

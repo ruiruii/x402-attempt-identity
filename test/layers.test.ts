@@ -2,7 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ATTEMPT_IDENTITY_FIELDS, deriveAttemptId, hashCanonical } from '../src/identity.js';
 import { jcsCanonicalize } from '../src/jcs.js';
-import { signedArtifactReference } from '../src/signedref.js';
+import {
+  capturedArtifactDigest,
+  signedArtifactReference,
+  signedContentIdentifier,
+  type ReferenceDeclaration,
+  type TransmittedArtifact,
+} from '../src/signedref.js';
 import { deriveReceiptId } from '../src/receipt.js';
 
 /**
@@ -66,10 +72,22 @@ test('SPEC-13: request layer and outcome layer are two named sets, one operation
   assert.notEqual(receipt('2026-10-01T10:00:00Z'), receipt('2026-10-01T10:00:01Z'));
 });
 
-test('SPEC-14: a signed reference is taken over transmitted bytes', () => {
+const BYTES: ReferenceDeclaration = {
+  covers: 'captured',
+  input: 'transmitted-bytes',
+  version: '1',
+};
+
+const TYPED: ReferenceDeclaration = {
+  covers: 'signed-content',
+  input: 'eip712-typed-fields',
+  version: '1',
+};
+
+test('SPEC-14: a captured reference is taken over transmitted bytes', () => {
   // An artifact as transmitted, with keys in the order the producer emitted.
   const transmitted = '{"b":1,"a":2}';
-  const reference = signedArtifactReference(transmitted);
+  const reference = signedArtifactReference({ bytes: transmitted }, BYTES);
 
   // Canonicalizing it first produces a different digest — and that digest
   // names an object nobody signed.
@@ -78,9 +96,59 @@ test('SPEC-14: a signed reference is taken over transmitted bytes', () => {
   assert.notEqual(hashCanonical(JSON.parse(transmitted)), reference);
 
   // Which is why the two rules must not be swapped: the attempt's own
-  // identity survives a key order change, a reference to a signed artifact
-  // does not, because the signature does not.
+  // identity survives a key order change, a captured digest does not,
+  // because the signature does not.
   const reordered = '{"a":2,"b":1}';
-  assert.equal(signedArtifactReference(reordered), hashCanonical(JSON.parse(reordered)));
-  assert.notEqual(signedArtifactReference(reordered), reference);
+  assert.equal(
+    signedArtifactReference({ bytes: reordered }, BYTES),
+    hashCanonical(JSON.parse(reordered)),
+  );
+  assert.notEqual(signedArtifactReference({ bytes: reordered }, BYTES), reference);
+});
+
+test('SPEC-14: two serializations of one signed message', () => {
+  // The control: identical signed content, two wire forms. The keys are not in
+  // canonical order, so the wire form is not the canonical form for either.
+  const message = {
+    fields: { payTo: '0xabc', amount: '10000' },
+    domain: { name: 'Offer' },
+  };
+  const compact = JSON.stringify(message);
+  const pretty = JSON.stringify(message, null, 2);
+  assert.notEqual(compact, pretty);
+  assert.notEqual(compact, jcsCanonicalize(message));
+
+  // The capture digests differ, because two captures are two byte strings.
+  assert.notEqual(capturedArtifactDigest(compact), capturedArtifactDigest(pretty));
+
+  // The signed-content identifier is the same, because a scheme that signs a
+  // message does not sign its serialization.
+  assert.equal(
+    signedContentIdentifier({ bytes: compact, message }, TYPED),
+    signedContentIdentifier({ bytes: pretty, message }, TYPED),
+  );
+
+  // And the errors point opposite ways: hashing the wire envelope for a
+  // typed-field scheme produces a value the signature check cannot honour,
+  // exactly as canonicalizing first produces one a byte-signer cannot.
+  assert.notEqual(
+    signedContentIdentifier({ bytes: compact, message }, TYPED),
+    capturedArtifactDigest(compact),
+  );
+  assert.notEqual(
+    signedContentIdentifier({ bytes: pretty, message }, TYPED),
+    capturedArtifactDigest(pretty),
+  );
+
+  // A message-signing recipe over an artifact that carries no message is an
+  // error, not a fallback to the bytes.
+  assert.throws(() => signedContentIdentifier({ bytes: compact }, TYPED), TypeError);
+});
+
+test('SPEC-14: a reference cannot be computed without a declaration', () => {
+  // There is no overload taking only the artifact. The cast hides the point:
+  // without it the call does not compile, because the format decides what was
+  // signed and this code is not entitled to guess.
+  const f = signedArtifactReference as unknown as (a: TransmittedArtifact) => string;
+  assert.throws(() => f({ bytes: '{"a":1}' }), TypeError);
 });
