@@ -93,6 +93,16 @@ The key words MUST, MUST NOT, SHOULD, and MAY are to be interpreted as described
 >
 > **Second, this is a failure class the rest of this document does not contain.** Every other hole here is a rule whose trigger can be made unreachable. This is a rule that stayed reachable and simply stopped covering the set when the set grew. **A normalization table is written per field; a field set is allowed to grow.** The two drift apart silently, and the drift produces no error — the uncovered member was never wrong, it was never covered.
 >
+> **SPEC-6c (MUST) — an unnormalizable input must not be indistinguishable from a normalized one.** Where a member of the field set cannot be brought into the normalized form the table requires, an implementation **MUST NOT** proceed as though it had been. The resulting identity **MUST** be distinguishable from the identity that same input would produce if it had been normalized — by refusal, by an explicit unmeasurable outcome, or by any other means the implementation can express. Silently applying the remainder of the rule and emitting a well-formed identity is non-conformant.
+> *Input domain:* every member of the SPEC-6 set for which the table defines a normalization **and** which can arrive in a form the table does not cover — a non-CAIP-2 `network` string, a timestamp that is not RFC 3339, an address on a namespace for which no lowercasing rule exists.
+> *Test:* `an unnormalizable member cannot pass as a normalized one` — which currently **asserts the defect** (an uncovered `network` leaves the payer as received) rather than the fix, and is written to go red the day a third return position exists. This is the only test in this document that is green on a behaviour the document forbids, and it is left that way deliberately: the alternative was to omit it, which would have made the clause read as satisfied.
+>
+> Why this is written as an indistinguishability requirement rather than as an obligation to return a particular value: the two available failure shapes are both real and neither can be mandated from outside. cv-scvd reports the same prefix test (`network.startsWith("eip155:")`) in two places in one codebase with opposite outcomes (`x402#3821`) — in `quotedTerms` a mis-cased network **silently skips the address lowercasing that depends on it**, and nothing raises; in `familyOf()` the same input falls through to `"unknown"`, which the caller treats as `payable: null`, explicitly *not judged*. The second is correct and the first is a defect, but the difference is not a difference in normalization — it is whether the function's contract admits a third answer. Mandating "return unknown" would require every normalizer to have a return position it may not have. Mandating indistinguishability requires only that the unnormalized path not look like the normal one, which every implementation can satisfy some way.
+>
+> The failure this clause exists for is not "the value is wrong". It is "the value is right-looking". A silently skipped normalization yields a digest that is well-formed, stable, and agrees with itself forever — the same shape as NEG-4 in `x402#3821`, where a correct refusal to carry a destroyed member produced a clean identifier for an input nobody should have produced.
+>
+> **What this clause does not settle.** Whether an implementation should *refuse*, or carry an explicit unmeasured result, is left open, because the choice depends on whether the surrounding operation has a place to report "could not judge" — a checker does, a pure normalizer may not. What is fixed is only that the two outcomes cannot be told apart by their output alone.
+>
 > **SPEC-7 (SHOULD).** The snapshot **SHOULD** include a domain identifier (for example a `version` literal) inside the hashed set, so that a change to the field set changes the identity's *domain* rather than silently colliding with it.
 > *Test:* `V3 — v2 field set, a different domain (R4)`.
 
@@ -200,7 +210,7 @@ The rule is additive. It adds no field, changes no wire format, alters no existi
 A runnable prototype exists at `x402-attempt-identity/` in this submission:
 
 ```
-npm install && npm test     # 49 tests
+npm install && npm test     # 50 tests
 npm run demo                # end-to-end walkthrough
 ```
 
