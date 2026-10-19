@@ -82,6 +82,7 @@ The case that matters is `OUTPUT-NOT-WHAT-WAS-SERVED`: **both signatures are val
 - **Not a facilitator.** This is a derivation library plus end-to-end tests, which the XP process accepts as a prototype. It is not a drop-in x402 SDK component.
 - **N3 precision.** Whether fractional seconds are preserved as received or truncated is not yet decided. Preserving the string is not preserving the instant: `…:00.1Z` and `…:00.100Z` are one instant and currently yield two identifiers. That is a **defect in N3, not a choice**, and it is not fixed here because fixing it unilaterally would pick a side of an open question.
 - **N4 is contested** and flagged as such.
+- **One test asserts a defect, not a fix.** `an unnormalizable member cannot pass as a normalized one` documents that an uncovered `network` value leaves the payer at whatever casing it arrived in, with no signal to the caller: a well-formed `attemptId` comes back either way. It is green on the behaviour SPEC-6c forbids, deliberately — the alternative was to omit it, which would have made the clause read as satisfied. It goes red the day `normalizeNetwork` has a third return position, which is the intended trigger for rewriting it.
 
 ## Independent reproduction
 
