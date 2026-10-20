@@ -10,6 +10,39 @@ npm test     # 54 tests: positive, negative, published vectors, countersignature
 npm run demo # end-to-end walkthrough
 ```
 
+### As a dependency
+
+```
+npm install @gates-spec/x402-attempt-identity
+```
+
+```ts
+import { deriveAttemptId, hashCanonical, idempotencyScope } from '@gates-spec/x402-attempt-identity';
+
+const attemptId = deriveAttemptId({
+  version: '1',
+  method: 'POST',
+  path: '/v1/pay',
+  query: { a: '1' },
+  body: { n: 1 },
+  payTo: '0xabc...',
+  asset: '0xdef...',
+  network: 'eip155:8453',
+  amount: '1000',
+  scheme: 'exact',
+});
+
+const receiptId = hashCanonical({
+  version: '1',
+  network: 'eip155:8453',
+  resourceUrl: 'https://example.com/resource',
+  payer: '0xabc...',
+  issuedAt: '2026-10-01T10:00:00Z',
+});
+```
+
+The library is ESM-only, Node >=20. Type declarations ship with the package.
+
 ## The invariant, in one sentence
 
 **An attempt's identity is derived once, at ingress, from named decoded fields — and every downstream path (settle, refusal, replay-lookup, challenge-quote) resolves that same value rather than deriving a second one.**

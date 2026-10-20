@@ -2,13 +2,42 @@
   "name": "@gates-spec/x402-attempt-identity",
   "version": "0.1.0",
   "description": "Reference implementation of the ingress-once attempt-identity invariant (x402 #3772 / #3776), plus the receiptId derivation applied to #3821.",
-  "license": "CC-BY-4.0",
+  "license": "Apache-2.0",
   "type": "module",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "files": [
+    "dist/src",
+    "dist/test",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ruiruii/x402-attempt-identity.git"
+  },
+  "keywords": [
+    "x402",
+    "attempt-identity",
+    "idempotency",
+    "payment-identity",
+    "jcs",
+    "rfc8785"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node tools/check-test-refs.mjs && node --test dist/test/*.test.js",
     "demo": "npm run build && node dist/src/demo.js",
-    "check:refs": "node tools/check-test-refs.mjs"
+    "check:refs": "node tools/check-test-refs.mjs",
+    "prepack": "npm run build && npm test"
   },
   "engines": {
     "node": ">=20"
