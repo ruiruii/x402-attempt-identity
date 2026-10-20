@@ -6,10 +6,12 @@
 |---|---|
 | **Title** | One ingress-derived attempt identity, resolved identically by settle and refusal |
 | **Author** | ruiruii (Rachel) — `gates-spec` |
-| **Status** | `awaiting-sponsor` |
+| **Status** | `pre-sponsor` — not a status in #3801's table; see the note below |
 | **Type** | Standards Track |
 | **PR** | (to be assigned on opening) |
 | **Prior discussion** | [x402-foundation/x402#3772](https://github.com/x402-foundation/x402/issues/3772), [PR #3776](https://github.com/x402-foundation/x402/pull/3776), [issue #3821](https://github.com/x402-foundation/x402/issues/3821) |
+
+**On the status field.** #3801 defines eight statuses (`draft`, `in-review`, `accepted`, `rejected`, `withdrawn`, `final`, `superseded`, `dormant`) and gives the sponsor ownership of transitions. An author with no sponsor cannot set any of them without either claiming a sponsor that does not exist or entering a `dormant` state that means "six months elapsed, this is not a rejection" before any time has elapsed. So this file says `pre-sponsor`, which is deliberately outside the table, and says so rather than picking the nearest legal value and misdescribing where the proposal is. If the process lands, this field becomes `dormant` on filing and `draft` when a sponsor sets it; the choice is the sponsor's, not mine.
 
 **Why Standards Track and not the Extensions Track default.** An extension is something an implementer can decline. This cannot be declined. It adds no field, changes no wire format, and requires no new cryptography — it constrains what the v2 spec already says about how `/settle`, refusal, replay-lookup and challenge-quote resolve an attempt. Either they resolve one identity or they do not; there is no conformant way to opt out. Extensions Track exists for patterns that have not yet proven themselves; this one is already being depended on by four independent efforts, described in §3.
 
@@ -58,16 +60,16 @@ The key words MUST, MUST NOT, SHOULD, and MAY are to be interpreted as described
 ### 4.1 Derivation
 
 > **SPEC-1 (MUST).** A facilitator **MUST** derive an attempt's identity **once, at ingress**, from a single immutable snapshot of the request as received, and **MUST NOT** derive or partially re-derive it downstream.
-> *Test:* `POS-1` (all five downstream paths resolve one value), `ingress output is frozen`.
+> *Test:* `POS-1` (all five downstream paths resolve one value), `ingress output is frozen — the snapshot cannot be mutated downstream`.
 
 > **SPEC-2 (MUST).** Derivation **MUST** be over **named decoded fields**. It **MUST NOT** be over the transmitted bytes of the request, the wire array, or any encoding that can vary between representations of the same request.
-> *Test:* `attempt identity comes from named decoded fields`, `V1`/`NEG-2`.
+> *Test:* `attempt identity comes from named decoded fields, not wire bytes`, `V1`, and the vector `NEG-2` (hash taken over encoded bytes instead of decoded payload).
 
 > **SPEC-3 (MUST).** The derived identity **MUST** be resolved, not recomputed from live state, by `/settle`, refusal handling (§9), replay-lookup, and challenge-quote responses. All four **MUST** resolve the same value.
 > *Test:* `POS-1`, `POS-1b` (refusal resolves the same value as settle).
 
 > **SPEC-4 (MUST NOT).** An implementation **MUST NOT** derive identity from request content that was not part of the ingress snapshot. Re-invoking a pure scope function over the already-frozen ingress inputs is permitted and expected — that is re-evaluation of a deterministic function, not a re-derivation.
-> *Test:* `POS-1c` (stable across repeated invocation), `NEG-1b`, `NEG-2`.
+> *Test:* `POS-1c: re-invoking the scope function is stable across many calls`, `NEG-1b: under the legacy scope those two requests collide end to end`, `NEG-2: a slot without the body digest collapses two requests`.
 
 > **SPEC-5 (MUST).** A request whose `amount`, query, or body differs **MUST** produce a different identity under SPEC-1 — the difference is established **at ingress, from the snapshot**, not discovered later by comparing two downstream resolutions. An implementation **MUST NOT** treat a downstream divergence as an acceptable observable: a second derivation that produces a different value for one logical request is a **violation**, and the event that surfaces it is the evidence of the violation, not a permitted mode of operation.
 >
@@ -81,7 +83,7 @@ The key words MUST, MUST NOT, SHOULD, and MAY are to be interpreted as described
 
 > **SPEC-6 (MUST).** The ingress snapshot **MUST** include at least these named fields: `method`, `path`, canonical `query`, the decoded `body` (or a digest of it computed after decoding), and the resolved `payTo`, `asset`, `network`, `amount`, and `scheme`.
 > *Input domain:* every request.
-> *Test:* `attempt identity comes from named decoded fields`, `a different body is a different attempt`, `a different query is a different attempt`, `a normalization rule stated per field stops covering the set when the set grows`.
+> *Test:* `attempt identity comes from named decoded fields, not wire bytes`, `a different body is a different attempt`, `a different query is a different attempt`, `a normalization rule stated per field stops covering the set when the set grows`.
 >
 > **SPEC-6b (MUST) — normalization is stated over field kinds, not over field names.** Where the normalization table (N1–N5, §5.6) names a transformation for a field, that transformation **MUST** be applied to every member of the snapshot that is of that kind, not only to the member the sentence happens to name. In particular, address lowercasing (N1) applies to **every** EVM-address-valued field, and `payTo` and `asset` are two such fields.
 > *Input domain:* every member of the SPEC-6 set whose kind has a rule in the table.
@@ -95,7 +97,7 @@ The key words MUST, MUST NOT, SHOULD, and MAY are to be interpreted as described
 >
 > **SPEC-6c (MUST) — a normalization rule with an unmet precondition must fail to a visible undetermined state.** Where a normalizer cannot select a rule for a member — because the member's form does not determine which rule applies — the implementation **MUST** fail that member to a visible undetermined state, and **MUST NOT** let it through unnormalized. The obligation is on the branch, not on the value: what the implementation emits for a well-formed identity is not evidence that a rule was applied, and a difference in the output is not a report of a skipped rule. Refusal, an explicit unmeasured outcome, and a named unnormalizable result all satisfy the clause; the choice is the implementation's, but it **MUST** be representable to the caller.
 > *Input domain:* every member of the SPEC-6 set for which the table defines a normalization **and** which can arrive in a form the table does not cover — a non-CAIP-2 `network` string, a timestamp that is not RFC 3339, an address on a namespace for which no lowercasing rule exists.
-> *Test:* `an unnormalizable member fails to a visible undetermined state`, `an unknown address namespace is unnormalizable, not passed through`, `SPEC-6c: a member N3 cannot normalize fails visibly, on the receipt set too`. Each pairs a refusal with a control that must still resolve, so the refusal cannot be satisfied by refusing everything. Reachability is checked by mutation, not assumed: returning the input unchanged from N2, from the N1 namespace gate, or from N3 each turns exactly one of these red. The N3 case was found this way — the first version of this clause was reachable through `network` and unreachable through `issuedAt`, and the mutation said so.
+> *Test:* `an unnormalizable member fails to a visible undetermined state`, `an unknown address namespace is unnormalizable, not passed through`, `SPEC-6c: a member N3 cannot normalize fails visibly, on the receipt set too`. Each pairs a refusal with a control that must still resolve, so the refusal cannot be satisfied by refusing everything. Reachability is checked by mutation, not assumed. The rules carry five preconditions between them — N1 refuses both when the network is unparseable and when its namespace has no address rule, N3 both on a shape mismatch and on a shaped string that resolves to no instant — and each of the five, disabled in turn with the check body left correct, turns at least one of these tests red. Two of the five were unreachable when this clause was first written: N1's unparseable-network branch, shadowed by N2 refusing the same input first, and N3's instant check, which no test entered. Both now have a test that calls the normalizer directly rather than going through `captureAtIngress`, because the shadowing is what hid them. A suite can report every test passing while a branch it claims to cover cannot be entered by any input.
 >
 > Why this is written at the branch rather than as an indistinguishability requirement on the output: an earlier wording of this clause said only that an unnormalizable member must not be indistinguishable from a normalized one, and that wording was satisfied by accident. On `network: '8453'` the address rule was silently skipped, and the identity still differed from the normalized one — not because anything reported the skip, but because the raw `network` string was hashed as received. The test for it was green, and its own comment said it asserted the defect. cv-scvd reports the same prefix test (`network.startsWith("eip155:")`) in two places in one codebase with opposite outcomes (`x402#3821`) — in `quotedTerms` a mis-cased network **silently skips the address lowercasing that depends on it**, and nothing raises; in `familyOf()` the same input falls through to `"unknown"`, which the caller treats as `payable: null`, explicitly *not judged*. The second is correct and the first is a defect, but the difference is not a difference in normalization — it is whether the function's contract admits a third answer. An earlier draft therefore declined to mandate that third answer, on the ground that a pure normalizer may have no return position for it, and settled for indistinguishability on the output. That concession is what let the clause be satisfied by accident, so it is withdrawn: a normalizer that cannot express "no rule selected" is a normalizer whose caller cannot be told, and the fix belongs one level down — in the return type, not in the prose. This implementation changed the type (`{ ok: true; value } | { ok: false; unnormalizable }`) rather than weaken the clause.
 >
@@ -121,16 +123,16 @@ The key words MUST, MUST NOT, SHOULD, and MAY are to be interpreted as described
 >
 > Why: an earlier wording said normalization must be applied "to every member for which it is defined", which left the definition with the implementation. An implementation that never wrote a `network` normalizer then satisfies the sentence by having nothing defined — and in at least one shipped implementation the consequence was worse than a divergent hash: the branch deciding whether to lowercase addresses at all read `network` case-sensitively, so a mis-cased network **silently skipped the address rule too**. A missing normalization does not fail alone; it can disable a rule whose trigger depends on reading the same member correctly first.
 >
-> *Test:* `N1`, `N2`, `N2b`, `N3`, `V4`, `V5`, `V6`, `V7`, `N3 repairs lowercase t and z`.
+> *Test:* `N1`, `N2`, `N2b`, `N3`, `V4`, `V5`, `V6`, `V7`, `N3 repairs lowercase t and z rather than rejecting the value`.
 
 > **SPEC-10 (MUST).** An absent member **MUST** be omitted from the hashed set entirely. It **MUST NOT** be emitted as `null`, empty string, or zero.
 >
 > *Input domain:* two kinds of absence, and both are covered — a member that the request never carried, and a member whose name the implementation destroyed before reading it (so that a value that exists is not reachable by the name the set expects). The second is not hypothetical: it is what NEG-4 produces.
 >
-> *Test:* `R2: omitting a member and nulling it are different, and only one is correct`, `NEG-1 — absent member emitted as null instead of omitted`, and the published vector `NEG-4a` inside `NEG-4 (decode order)` (both members unreachable, both omitted and neither nulled). `NEG-4a` is a vector id in `NEG4_PUBLISHED`, not a test title.
+> *Test:* `R2: omitting a member and nulling it are different, and only one is correct`, `NEG-1 — absent member emitted as null instead of omitted`, and the published vector `NEG-4a` inside `NEG-4 (decode order): normalizing the text instead of the values` (both members unreachable, both omitted and neither nulled). `NEG-4a` is a vector id in `NEG4_PUBLISHED`, not a test title.
 
 > **SPEC-11 (MUST).** Canonicalization **MUST** follow RFC 8785 (JCS): object keys sorted by UTF-16 code units, no insignificant whitespace, UTF-8 output. The digest **MUST** be over the UTF-8 bytes of that output.
-> *Test:* `V1`, `canonical query is order-independent`.
+> *Test:* `V1`, `canonical query is order-independent and encoded`.
 
 ### 4.3 Obligations derived from it
 
@@ -210,7 +212,7 @@ The rule is additive. It adds no field, changes no wire format, alters no existi
 A runnable prototype exists at `x402-attempt-identity/` in this submission:
 
 ```
-npm install && npm test     # 50 tests
+npm install && npm test     # 54 tests
 npm run demo                # end-to-end walkthrough
 ```
 
@@ -231,6 +233,14 @@ It is a TypeScript derivation library with end-to-end tests — which the XP pro
 **Honest limitations.** JCS is implemented for the subset the invariant needs; numbers requiring exponential serialization are refused with an error rather than emitted, because a serialization another implementation might disagree with is precisely the failure class this XP is about. Whether fractional seconds are preserved or truncated (SPEC-9) is not yet decided. The URL non-normalization rule is the least settled line in the table and is flagged as contested in the source.
 
 **Conformance tests.** Required before `final`, and started already: every MUST and MUST NOT in §4 is annotated with the test that covers it. Writing them while drafting is what surfaced the re-evaluation objection and the request-layer defect described above.
+
+Three properties are checked per requirement, not one, because "has a test" was satisfied by two of this repository's own gaps:
+
+- **Violation.** The test fails when the requirement is violated.
+- **Reachability.** The test fails when the requirement's check cannot execute — trigger disabled, check body unchanged. This is the mutation test pointed at the trigger instead of the body.
+- **Attribution.** The test names the check that caught it. An aggregate pass count does not satisfy this.
+
+Reachability is the one that found real gaps here. The normalizer has five preconditions across four rules; disabling each in turn, two of them left all 52 tests green at the time: N1's unparseable-network branch, which is shadowed by N2 refusing the same input first, and N3's check that a shaped timestamp resolves to an instant. Both now have a test that calls the normalizer directly, because the shadowing is what made them invisible. Five preconditions, five mutations, all red. The count went from 52 to 54, and the number that matters is that two branches were unreachable while the suite reported full pass.
 
 ---
 

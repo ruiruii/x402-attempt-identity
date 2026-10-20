@@ -88,6 +88,13 @@ The case that matters is `OUTPUT-NOT-WHAT-WAS-SERVED`: **both signatures are val
 
   This is worth stating because it is the second time in this repository that a rule has been covered by a test that could not reach it. The first was the namespace gate. Both were found by the mutation, not by reading, and neither was found by the author of the rule. A suite that reports 54 passing says nothing about whether any of the five branches was ever entered.
 
+- **References that resolve to nothing.** `npm test` now runs `tools/check-test-refs.mjs` before the suite: every backticked identifier on a `*Test:*` line in the XP must be exactly a test title, or an id whose following character in a real title is a delimiter, or something the prose labels a vector. Writing that check took four attempts, and the first three were wrong in a way worth recording, because each one *looked* right:
+  - accepting any `NEG-*`/`POS-*` token let `NEG-1` pass when the test is `NEG-Q1` and the only `NEG-1` is a different test's prefix;
+  - asking "is this a unique prefix of some title" rejected `POS-1`, which has three titles starting with it and names exactly one;
+  - allowing a token when the *line* contained the word "vector" let a renamed test through whenever an unrelated `V1` elsewhere in the line said it.
+
+  The rule that works is local: the character after the id inside the title decides whether it named that title, and a "vector" label counts only when it is the word immediately before the backtick. Three negative controls are kept in the commit message — a truncated title, a pre-rename name, and an invented title — and each turns the checker red. This is the same failure as the clause above, one level up: a reference with no referent reads exactly like one with a referent.
+
 ## Independent reproduction
 
 The vectors in `conformance/receiptid-vectors.md` have been reproduced by an implementation that did not read their expected values — two languages for the digest step, on Node v22.14.0. It found two errors in the first version: one published value whose name did not determine its input, and one test that asserted only that two values differed, which stays green when both drift together. Both are fixed, and both are recorded in the vectors file under **Independent reproductions**, including what the reproduction does *not* claim (it is not an endorsement of N4 or of N3's precision rule).
