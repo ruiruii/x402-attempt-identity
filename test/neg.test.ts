@@ -5,7 +5,7 @@ import { captureAtIngress, canonicalQuery, type DecodedRequest } from '../src/in
 import { idempotencyScope } from '../src/scope.js';
 import { hashCanonical, UnnormalizableMember } from '../src/identity.js';
 import { deriveReceiptId } from '../src/receipt.js';
-import { normalizeIssuedAt } from '../src/normalize.js';
+import { normalizeAddress, normalizeIssuedAt } from '../src/normalize.js';
 import { legacyScope, scopeWithoutBody, unencodedQuery } from '../src/legacy.js';
 
 const BASE = {
@@ -276,4 +276,64 @@ test('an unknown address namespace is unnormalizable, not passed through', () =>
       err instanceof UnnormalizableMember && err.member === 'payTo',
     'a namespace with no lowercasing rule must not silently keep the address as received',
   );
+});
+
+/**
+ * The N1 gate that the test above cannot reach.
+ *
+ * `normalizeAddress` has two ways to say "no rule selected": the network is not
+ * CAIP-2 at all, or it is CAIP-2 in a namespace with no address rule. The test
+ * above covers the second. The first is unreachable through `captureAtIngress`,
+ * because N2 runs first and throws on the same malformed network — so a
+ * mutation that let an unparseable network through N1 left all 52 tests green.
+ *
+ * The face is the same: two different preconditions, one observation. Calling
+ * the normalizer directly is what separates them, and it is the only way the
+ * first branch can be killed at all.
+ */
+test('SPEC-6c: N1 refuses when the network is not CAIP-2, not only when the namespace is unknown', () => {
+  // Two different preconditions, same member name. `network` is refused by N2
+  // when it is not CAIP-2, and by N1 when its namespace has no address rule.
+  // Only the second is reachable through `captureAtIngress`, because N2 runs
+  // first — so a mutation that let an unparseable network through N1 left the
+  // whole suite green. Calling the normalizer directly separates the two.
+  //
+  // It returns a value rather than throwing: the failure is in the return type,
+  // which is the point of SPEC-6c. Asserting a throw here would test `unwrap`.
+  const noNamespace = normalizeAddress('0xabcdEf0000000000000000000000000000000001', '8453');
+  assert.equal(noNamespace.ok, false, 'an unparseable network must not yield a lowercased address');
+  if (!noNamespace.ok) assert.ok(noNamespace.unnormalizable.startsWith('N1'), noNamespace.unnormalizable);
+
+  const unknownNamespace = normalizeAddress('So11111111111111111111111111111111111111112', 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp');
+  assert.equal(unknownNamespace.ok, false, 'a namespace with no rule must not be passed through');
+  if (!unknownNamespace.ok) assert.ok(unknownNamespace.unnormalizable.startsWith('N1'), unknownNamespace.unnormalizable);
+
+  // Control: the same address on a parseable, covered network is normalized,
+  // so the two refusals above are about the network and not about the address.
+  const covered = normalizeAddress('0xabcdEf0000000000000000000000000000000001', 'eip155:8453');
+  assert.equal(covered.ok, true);
+  if (covered.ok) assert.equal(covered.value, '0xabcdef0000000000000000000000000000000001');
+});
+
+/**
+ * N3's second face. `normalizeIssuedAt` has two preconditions — the string
+ * matches the RFC 3339 shape, and the matched string resolves to an instant.
+ * The first was covered; the second was not, and disabling it left all 53 tests
+ * green. `2026-13-45T99:99:99Z` has the shape and no instant, which is the only
+ * input that separates the two.
+ */
+test('SPEC-6c: N3 refuses a shaped-but-unresolvable timestamp, not only a malformed one', () => {
+  const shaped = normalizeIssuedAt('2026-13-45T99:99:99Z');
+  assert.equal(shaped.ok, false, 'a timestamp with the shape and no instant must not be normalized');
+  if (!shaped.ok) assert.ok(shaped.unnormalizable.startsWith('N3'), shaped.unnormalizable);
+
+  const malformed = normalizeIssuedAt('2026-10-01 10:00');
+  assert.equal(malformed.ok, false);
+  if (!malformed.ok) assert.ok(malformed.unnormalizable.startsWith('N3'), malformed.unnormalizable);
+
+  // Control: a well-formed timestamp is normalized, so the two refusals above
+  // are about the value and not about the function.
+  const good = normalizeIssuedAt('2026-10-01T10:00:00Z');
+  assert.equal(good.ok, true);
+  if (good.ok) assert.equal(good.value, '2026-10-01T10:00:00Z');
 });

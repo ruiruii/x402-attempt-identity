@@ -101,10 +101,21 @@ export function attemptIdentitySubset(input: AttemptIdentityInput): Record<strin
  */
 export class UnnormalizableMember extends Error {
   readonly member: string;
+  /**
+   * Kept as a field, not only interpolated into the message.
+   *
+   * A caller that wants to know *which* rule declined has no way to ask a
+   * string. Two rules can name the same member — `network` is refused by N2
+   * when it is not CAIP-2, and by N1 when its namespace has no address rule —
+   * so `member` alone cannot tell the two refusals apart. Reading the prefix
+   * out of the message would work and would make the message load-bearing.
+   */
+  readonly reason: string;
   constructor(member: string, reason: string) {
     super(`SPEC-6c: member \`${member}\` is unnormalizable — ${reason}`);
     this.name = 'UnnormalizableMember';
     this.member = member;
+    this.reason = reason;
   }
 }
 

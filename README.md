@@ -6,7 +6,7 @@ Submitted as the **Reference implementation** section (§7) of the XP, which the
 
 ```
 npm install
-npm test     # 52 tests: positive, negative, published vectors, countersignature
+npm test     # 54 tests: positive, negative, published vectors, countersignature
 npm run demo # end-to-end walkthrough
 ```
 
@@ -82,7 +82,11 @@ The case that matters is `OUTPUT-NOT-WHAT-WAS-SERVED`: **both signatures are val
 - **Not a facilitator.** This is a derivation library plus end-to-end tests, which the XP process accepts as a prototype. It is not a drop-in x402 SDK component.
 - **N3 precision.** Whether fractional seconds are preserved as received or truncated is not yet decided. Preserving the string is not preserving the instant: `…:00.1Z` and `…:00.100Z` are one instant and currently yield two identifiers. That is a **defect in N3, not a choice**, and it is not fixed here because fixing it unilaterally would pick a side of an open question.
 - **N4 is contested** and flagged as such.
-- **The clause that used to be satisfied by accident.** SPEC-6c once said only that an unnormalizable member must not be indistinguishable from a normalized one, and one test was green on a behaviour the clause forbids — an uncovered `network` left the payer as received, and a well-formed `attemptId` came back anyway. The output happened to differ, for a reason unrelated to the skipped address rule, and that difference was mistaken for a report of the skip. The obligation is now on the branch: unnormalizable members fail visibly, and the normalizers' return type says so. Reachability is checked by mutation — putting back the silent default in N2, in the N1 namespace gate, or in N3 each turns exactly one test red. The N3 arm had no such test until that mutation was run, which is why it is now the example rather than the footnote.
+- **The clause that used to be satisfied by accident.** SPEC-6c once said only that an unnormalizable member must not be indistinguishable from a normalized one, and one test was green on a behaviour the clause forbids — an uncovered `network` left the payer as received, and a well-formed `attemptId` came back anyway. The output happened to differ, for a reason unrelated to the skipped address rule, and that difference was mistaken for a report of the skip. The obligation is now on the branch: unnormalizable members fail visibly, and the normalizers' return type says so.
+
+  **Reachability, measured rather than asserted.** The rules carry five preconditions between them, not three: N1 refuses both when the network is unparseable and when its namespace has no address rule, and N3 refuses both on a shape mismatch and on a matched string that resolves to no instant. Disabling each of the five in turn, leaving the check body correct and changing nothing else: `N1`/unparseable `fail 1`, `N1`/namespace `fail 2`, `N2` `fail 1`, `N3`/shape `fail 2`, `N3`/instant `fail 1`. **Two of the five were unreachable before this run** — the N1 precondition, shadowed by N2 which refuses the same input first, and N3's instant check — and each of them left the whole suite green. Both now have a test that calls the normalizer directly rather than going through `captureAtIngress`, because the shadowing is the reason they were invisible.
+
+  This is worth stating because it is the second time in this repository that a rule has been covered by a test that could not reach it. The first was the namespace gate. Both were found by the mutation, not by reading, and neither was found by the author of the rule. A suite that reports 54 passing says nothing about whether any of the five branches was ever entered.
 
 ## Independent reproduction
 
