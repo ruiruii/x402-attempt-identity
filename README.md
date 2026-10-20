@@ -12,9 +12,13 @@ npm run demo # end-to-end walkthrough
 
 ### As a dependency
 
+The package metadata is ready for npm publication. Install from GitHub for now:
+
 ```
-npm install @gates-spec/x402-attempt-identity
+npm install ruiruii/x402-attempt-identity
 ```
+
+Registry publication is on hold until there is a downstream consumer or the XP reaches `accepted` status — whichever comes first. The version will not be published to npm before then, because npm packages cannot be truly deleted once published and 0.1.0 should mean "someone else is using it", not only "the metadata is valid".
 
 ```ts
 import { deriveAttemptId, hashCanonical, idempotencyScope } from '@gates-spec/x402-attempt-identity';
